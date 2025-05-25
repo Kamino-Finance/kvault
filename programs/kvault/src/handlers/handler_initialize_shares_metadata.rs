@@ -1,0 +1,56 @@
+use anchor_lang::prelude::*;
+use anchor_spl::{metadata::Metadata, token::Mint};
+
+use crate::{utils::metadata, VaultState};
+
+pub fn process<'info>(
+    ctx: Context<'_, '_, '_, 'info, InitializeSharesMetadata<'info>>,
+    name: String,
+    symbol: String,
+    uri: String,
+) -> Result<()> {
+    let vault = &ctx.accounts.vault_state.load()?;
+
+    msg!("name={}, symbol={}, uri={}", name, symbol, uri);
+    metadata::init(
+        ctx.accounts.vault_state.to_account_info(),
+        ctx.accounts.metadata_program.to_account_info(),
+        ctx.accounts.shares_mint.to_account_info(),
+        ctx.accounts.base_vault_authority.to_account_info(),
+        ctx.accounts.shares_metadata.to_account_info(),
+        ctx.accounts.vault_admin_authority.to_account_info(),
+        ctx.accounts.system_program.to_account_info(),
+        ctx.accounts.rent.to_account_info(),
+        vault.base_vault_authority_bump,
+        metadata::TokenMetadata { name, symbol, uri },
+    )?;
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitializeSharesMetadata<'info> {
+    #[account(mut)]
+    pub vault_admin_authority: Signer<'info>,
+
+    #[account(
+        has_one = vault_admin_authority,
+        has_one = shares_mint,
+        has_one = base_vault_authority
+    )]
+    pub vault_state: AccountLoader<'info, VaultState>,
+
+    /// CHECK: vault checks this
+    pub shares_mint: Account<'info, Mint>,
+
+    /// CHECK: vault checks this
+    pub base_vault_authority: AccountInfo<'info>,
+
+    /// CHECK: validated empty by the downstream metaplex metadata program
+    #[account(mut)]
+    pub shares_metadata: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+    pub metadata_program: Program<'info, Metadata>,
+}

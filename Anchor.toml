@@ -1,15 +1,10 @@
 [features]
 seeds = false
 skip-lint = false
+
 [programs.localnet]
 kvault = "KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd"
-
-[registry]
-url = "https://api.apr.dev"
 
 [provider]
 cluster = "localnet"
 wallet = "/wallet.json"
-
-[scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

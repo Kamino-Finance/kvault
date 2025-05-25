@@ -1,6 +1,9 @@
 # Kvault - Kamino Lending Vault Program
 
-Kamino vault is an open source software based on Kamino Lending program.
+Kamino vault is an open source smart contract allowing to earn yield by lending on Kamino Lending (KLend) program.
+
+Admins of a vault define investment targets on different reserves of the same asset. User can deposit in a vault in exchange of a share of the vault.
+Kvault deploy these deposits to the KLend reserves according to the configured targets.
 
 ## Deployments
 

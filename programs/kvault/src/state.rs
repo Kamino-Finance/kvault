@@ -35,7 +35,7 @@ pub struct VaultState {
     pub shares_issued: u64,
 
     pub available_crank_funds: u64,
-    pub padding_0: u64,
+    pub unallocated_weight: u64,
 
     pub performance_fee_bps: u64,
     pub management_fee_bps: u64,
@@ -66,7 +66,8 @@ pub struct VaultState {
 
     pub creation_timestamp: u64,
 
-    pub padding_2: u64,
+    // when computing the amounts to invest in each reserve and how much to leave unallocated we use this cap as the max value that can stay uninvested; if set to 0 (for backwards compatibility) it means the same thing as U64::MAX
+    pub unallocated_tokens_cap: u64,
     pub allocation_admin: Pubkey,
 
     pub padding_3: [u128; 242],
@@ -294,13 +295,30 @@ impl VaultState {
         let total_weight = self
             .vault_allocation_strategy
             .iter()
-            .filter(|r| r.reserve != Pubkey::default())
+            .filter(|r| r.reserve != Pubkey::default() && r.token_allocation_cap > 0)
             .map(|r| r.target_allocation_weight)
-            .sum::<u64>();
+            .sum::<u64>(); // this doesn't contain the unallocated weight, the amount to remain unallocated is computed first and then allocate to the reserves
 
         let mut remaining_tokens_to_allocate = total_tokens;
-        let mut remaining_weight_to_allocate = total_weight;
         let mut token_target_allocations = [Fraction::ZERO; MAX_RESERVES];
+
+        // First handle unallocated amount if there's unallocated weight
+        if self.unallocated_weight > 0 {
+            let unallocated_cap = if self.unallocated_tokens_cap == 0 {
+                u64::MAX
+            } else {
+                self.unallocated_tokens_cap
+            };
+
+            let unallocated_target = total_tokens.mul_int_ratio(
+                self.unallocated_weight,
+                total_weight + self.unallocated_weight,
+            );
+            let unallocated_tokens_target = unallocated_target.min(Fraction::from(unallocated_cap));
+            remaining_tokens_to_allocate -= unallocated_tokens_target;
+        }
+
+        let mut remaining_weight_to_allocate = total_weight;
 
         // Loop until all tokens are allocated or there is no more weight to allocate (meaning all reserves are at their cap)
         // Extra break point to avoid infinite loop if no cap was reached but some token are left

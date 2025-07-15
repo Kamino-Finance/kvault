@@ -98,6 +98,10 @@ pub fn process<'info>(
     let user_shares_gained = user_shares_balance_after - user_initial_shares_balance;
 
     require!(
+        token_to_deposit + crank_funds_to_deposit <= max_amount,
+        KaminoVaultError::DepositAmountGreaterThanRequestedAmount
+    );
+    require!(
         initial_vault_shares_issued + user_shares_gained == vault_state.shares_issued,
         KaminoVaultError::SharesIssuedAmountDoesNotMatch,
     );

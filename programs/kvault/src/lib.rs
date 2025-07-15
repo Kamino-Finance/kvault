@@ -26,7 +26,7 @@ solana_security_txt::security_txt! {
 
     // Optional Fields
     preferred_languages: "en",
-    auditors: "OtterSec, Offside Labs, Certora"
+    auditors: "OtterSec, Offside Labs, Certora, Sec3"
 }
 
 #[program]
@@ -266,6 +266,9 @@ pub enum KaminoVaultError {
 
     #[msg("Reserve has non-zero allocation or ctokens so cannot be removed")]
     ReserveHasNonZeroAllocationOrCTokens,
+
+    #[msg("Deposit amount is greater than requested amount")]
+    DepositAmountGreaterThanRequestedAmount,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

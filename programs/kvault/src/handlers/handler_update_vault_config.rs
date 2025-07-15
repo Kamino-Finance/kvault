@@ -36,6 +36,8 @@ pub enum VaultConfigField {
     LookupTable,
     Farm,
     AllocationAdmin,
+    UnallocatedWeight,
+    UnallocatedTokensCap,
 }
 
 pub fn process<'info>(
@@ -172,6 +174,18 @@ pub fn process<'info>(
             msg!("Prv value is {:?}", vault.allocation_admin);
             msg!("New value is {:?}", pubkey);
             vault.allocation_admin = pubkey;
+        }
+        VaultConfigField::UnallocatedWeight => {
+            let unallocated_weight = BorshDeserialize::try_from_slice(data)?;
+            msg!("Prv value is {:?}", vault.unallocated_weight);
+            msg!("New value is {:?}", unallocated_weight);
+            vault.unallocated_weight = unallocated_weight;
+        }
+        VaultConfigField::UnallocatedTokensCap => {
+            let unallocated_tokens_cap = BorshDeserialize::try_from_slice(data)?;
+            msg!("Prv value is {:?}", vault.unallocated_tokens_cap);
+            msg!("New value is {:?}", unallocated_tokens_cap);
+            vault.unallocated_tokens_cap = unallocated_tokens_cap;
         }
     }
 

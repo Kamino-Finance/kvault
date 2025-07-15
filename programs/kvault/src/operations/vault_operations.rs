@@ -59,11 +59,7 @@ where
         .unwrap();
     let crank_funds_to_deposit = num_reserve * vault.crank_fund_fee_per_reserve;
 
-    if max_amount < vault.min_deposit_amount + crank_funds_to_deposit {
-        return err!(KaminoVaultError::DepositAmountBelowMinimum);
-    }
-
-    let user_tokens_to_deposit = max_amount - crank_funds_to_deposit;
+    let max_user_tokens_to_deposit = max_amount - crank_funds_to_deposit;
 
     let holdings = holdings(vault, reserves_iter, current_slot)?;
 
@@ -79,9 +75,18 @@ where
 
     let shares_to_mint = get_shares_to_mint(
         current_vault_aum,
-        user_tokens_to_deposit,
+        max_user_tokens_to_deposit,
         vault.shares_issued,
     )?;
+    let user_tokens_to_deposit = common::compute_amount_to_deposit_from_shares_to_mint(
+        vault.shares_issued,
+        current_vault_aum,
+        shares_to_mint,
+    );
+
+    if user_tokens_to_deposit < vault.min_deposit_amount {
+        return err!(KaminoVaultError::DepositAmountBelowMinimum);
+    }
 
     if shares_to_mint == 0 {
         return err!(KaminoVaultError::DepositAmountsZeroShares);
@@ -741,6 +746,20 @@ pub mod common {
         );
 
         total_for_user
+    }
+
+    pub fn compute_amount_to_deposit_from_shares_to_mint(
+        vault_total_shares: u64,
+        vault_total_holdings: Fraction,
+        shares_to_mint: u64,
+    ) -> u64 {
+        if vault_total_shares == 0 {
+            shares_to_mint
+        } else {
+            vault_total_holdings
+                .full_mul_int_ratio_ceil(shares_to_mint, vault_total_shares)
+                .to_ceil()
+        }
     }
 
     /// apply the withdrawal effects to the vault accounting

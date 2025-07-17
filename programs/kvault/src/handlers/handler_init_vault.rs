@@ -107,7 +107,7 @@ pub struct InitVault<'info> {
         seeds=[SHARES_SEEDS, vault_state.key().as_ref()],
         bump,
         payer = admin_authority,
-        mint::decimals = 6,
+        mint::decimals = base_token_mint.decimals,
         mint::authority = base_vault_authority,
         mint::token_program = shares_token_program,
     )]

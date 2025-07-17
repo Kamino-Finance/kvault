@@ -45,7 +45,8 @@ uint = "0.9.5"
 arrform = "0.1.1"
 kamino_lending = { git = "https://github.com/Kamino-Finance/klend.git", features = [
     "no-entrypoint",
-], branch = "release/1.12.0" }
+], branch = "full_mul_int_ratio_ceil" }
 
 # Only required when serializing to market config to JSON and in tests
 serde = { workspace = true, optional = true }
+

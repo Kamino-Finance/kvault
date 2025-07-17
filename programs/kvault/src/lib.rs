@@ -26,7 +26,7 @@ solana_security_txt::security_txt! {
 
     // Optional Fields
     preferred_languages: "en",
-    auditors: "OtterSec, Offside Labs, Certora"
+    auditors: "OtterSec, Offside Labs, Certora, Sec3"
 }
 
 #[program]
@@ -121,18 +121,18 @@ pub mod kamino_vault {
 
 #[error_code]
 #[derive(PartialEq, Eq, strum::EnumString)]
+// ..
 pub enum KaminoVaultError {
-    //TODO better error messages
-    #[msg("DepositAmountsZero")]
+    #[msg("Cannot deposit zero tokens")]
     DepositAmountsZero = 1000,
 
-    #[msg("SharesIssuedAmountDoesNotMatch")]
+    #[msg("Post check failed on share issued")]
     SharesIssuedAmountDoesNotMatch,
 
-    #[msg("MathOverflow")]
+    #[msg("Math operation overflowed")]
     MathOverflow,
 
-    #[msg("IntegerOverflow")]
+    #[msg("Integer conversion overflowed")]
     IntegerOverflow,
 
     #[msg("Withdrawn amount is below minimum")]
@@ -266,6 +266,10 @@ pub enum KaminoVaultError {
 
     #[msg("Reserve has non-zero allocation or ctokens so cannot be removed")]
     ReserveHasNonZeroAllocationOrCTokens,
+
+    #[msg("Deposit amount is greater than requested amount")]
+    DepositAmountGreaterThanRequestedAmount,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;
+

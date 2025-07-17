@@ -121,18 +121,18 @@ pub mod kamino_vault {
 
 #[error_code]
 #[derive(PartialEq, Eq, strum::EnumString)]
+// ..
 pub enum KaminoVaultError {
-    //TODO better error messages
-    #[msg("DepositAmountsZero")]
+    #[msg("Cannot deposit zero tokens")]
     DepositAmountsZero = 1000,
 
-    #[msg("SharesIssuedAmountDoesNotMatch")]
+    #[msg("Post check failed on share issued")]
     SharesIssuedAmountDoesNotMatch,
 
-    #[msg("MathOverflow")]
+    #[msg("Math operation overflowed")]
     MathOverflow,
 
-    #[msg("IntegerOverflow")]
+    #[msg("Integer conversion overflowed")]
     IntegerOverflow,
 
     #[msg("Withdrawn amount is below minimum")]
@@ -272,3 +272,4 @@ pub enum KaminoVaultError {
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;
+

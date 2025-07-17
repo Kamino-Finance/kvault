@@ -2231,7 +2231,7 @@ checksum = "98a01dab6acf992653be49205bdd549f32f17cb2803e8eacf1560bf97259aae8"
 [[package]]
 name = "sbod-itf"
 version = "0.1.0"
-source = "git+https://github.com/Kamino-Finance/scope.git#ed1613620a1ec8610b59d3857efcaa45f00b4a18"
+source = "git+https://github.com/Kamino-Finance/scope.git#e21a5817351d878e0a761e9e820b93690087d81b"
 dependencies = [
  "anchor-lang",
  "bytemuck",
@@ -2255,7 +2255,7 @@ dependencies = [
 [[package]]
 name = "scope-types"
 version = "1.0.0"
-source = "git+https://github.com/Kamino-Finance/scope.git#ed1613620a1ec8610b59d3857efcaa45f00b4a18"
+source = "git+https://github.com/Kamino-Finance/scope.git#e21a5817351d878e0a761e9e820b93690087d81b"
 dependencies = [
  "anchor-lang",
  "bytemuck",

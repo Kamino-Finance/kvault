@@ -129,9 +129,9 @@ pub struct WithdrawFromAvailable<'info> {
 
     /// CHECK: vault_state checks the token mint and the token program
     #[account(mut,
-        associated_token::mint = vault_state.load()?.token_mint.key(),
-        associated_token::authority = user,
-        associated_token::token_program = token_program,
+        token::mint = token_mint,
+        token::authority = user,
+        token::token_program = token_program
     )]
     pub user_token_ata: InterfaceAccount<'info, TokenAccount>,
 
@@ -140,11 +140,12 @@ pub struct WithdrawFromAvailable<'info> {
     pub token_mint: AccountInfo<'info>,
 
     #[account(mut,
-        associated_token::mint = shares_mint,
-        associated_token::authority = user,
-        associated_token::token_program = shares_token_program,
+        token::mint = shares_mint,
+        token::authority = user,
+        token::token_program = shares_token_program
     )]
     pub user_shares_ata: Box<InterfaceAccount<'info, TokenAccount>>,
+
     #[account(mut)]
     pub shares_mint: Box<InterfaceAccount<'info, Mint>>,
 

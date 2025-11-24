@@ -3,12 +3,92 @@ use kamino_lending::{fraction::Fraction, utils::FractionExtra};
 
 use crate::{
     operations::vault_operations::common::Invested,
-    utils::consts::{VAULT_ALLOCATION_SIZE, VAULT_STATE_SIZE},
+    utils::{
+        consts::{
+            GLOBAL_CONFIG_SIZE, MAX_WITHDRAWAL_PENALTY_BPS, MAX_WITHDRAWAL_PENALTY_LAMPORTS,
+            RESERVE_WHITELIST_ENTRY_SIZE, VAULT_ALLOCATION_SIZE, VAULT_STATE_SIZE,
+        },
+        global_config::UpdateGlobalConfigMode,
+    },
     KaminoVaultError,
 };
 use bytemuck::Zeroable;
 
 pub const MAX_RESERVES: usize = 25;
+
+static_assertions::const_assert_eq!(GLOBAL_CONFIG_SIZE, std::mem::size_of::<GlobalConfig>());
+static_assertions::const_assert_eq!(0, std::mem::size_of::<GlobalConfig>() % 8);
+
+#[account(zero_copy)]
+#[derive(AnchorDeserialize, PartialEq, Eq)]
+#[repr(C)]
+pub struct GlobalConfig {
+    pub global_admin: Pubkey,
+    pub pending_admin: Pubkey,
+
+    pub withdrawal_penalty_lamports: u64,
+    pub withdrawal_penalty_bps: u64,
+
+    pub padding: [u8; 944],
+}
+
+impl Default for GlobalConfig {
+    fn default() -> Self {
+        Self::zeroed()
+    }
+}
+
+impl GlobalConfig {
+    pub fn init(&mut self, initial_admin: Pubkey) {
+        self.global_admin = initial_admin;
+        self.pending_admin = initial_admin;
+        self.withdrawal_penalty_bps = 0;
+        self.withdrawal_penalty_lamports = 0;
+    }
+
+    pub fn update_value(&mut self, update: UpdateGlobalConfigMode) -> Result<()> {
+        let global_config = self;
+
+        msg!("Updating global config with mode {:?}", update);
+        match update {
+            UpdateGlobalConfigMode::PendingAdmin(new_admin) => {
+                msg!("Prv value is: {:?}", global_config.pending_admin);
+                msg!("New value is: {:?}", new_admin);
+                global_config.pending_admin = new_admin;
+            }
+            UpdateGlobalConfigMode::MinWithdrawalPenaltyLamports(new_value) => {
+                require_gte!(
+                    MAX_WITHDRAWAL_PENALTY_LAMPORTS,
+                    new_value,
+                    KaminoVaultError::WithdrawalFeeLamportsGreaterThanMaxAllowed
+                );
+                msg!(
+                    "Prv value is: {:?}",
+                    global_config.withdrawal_penalty_lamports
+                );
+                msg!("New value is: {:?}", new_value);
+                global_config.withdrawal_penalty_lamports = new_value;
+            }
+            UpdateGlobalConfigMode::MinWithdrawalPenaltyBPS(new_value) => {
+                require_gte!(
+                    MAX_WITHDRAWAL_PENALTY_BPS,
+                    new_value,
+                    KaminoVaultError::WithdrawalFeeBPSGreaterThanMaxAllowed
+                );
+                msg!("Prv value is: {:?}", global_config.withdrawal_penalty_bps);
+                msg!("New value is: {:?}", new_value);
+                global_config.withdrawal_penalty_bps = new_value;
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn apply_pending_admin(&mut self) -> Result<()> {
+        self.global_admin = self.pending_admin;
+        Ok(())
+    }
+}
 
 static_assertions::const_assert_eq!(VAULT_STATE_SIZE, std::mem::size_of::<VaultState>());
 static_assertions::const_assert_eq!(0, std::mem::size_of::<VaultState>() % 16);
@@ -70,7 +150,16 @@ pub struct VaultState {
     pub unallocated_tokens_cap: u64,
     pub allocation_admin: Pubkey,
 
-    pub padding_3: [u128; 242],
+    pub withdrawal_penalty_lamports: u64,
+    pub withdrawal_penalty_bps: u64,
+
+    pub first_loss_capital_farm: Pubkey,
+
+    pub allow_allocations_in_whitelisted_reserves_only: u8,
+    pub allow_invest_in_whitelisted_reserves_only: u8,
+
+    pub padding_4: [u8; 14],
+    pub padding_3: [u128; 238],
 }
 
 impl Default for VaultState {
@@ -136,6 +225,14 @@ impl VaultState {
 
     pub fn set_cumulative_perf_fees(&mut self, cumulative_perf_fees: Fraction) {
         self.cumulative_perf_fees_sf = cumulative_perf_fees.to_bits();
+    }
+
+    pub fn vault_allows_allocations_in_whitelisted_reserves_only(&self) -> bool {
+        self.allow_allocations_in_whitelisted_reserves_only == 1
+    }
+
+    pub fn vault_allows_invest_in_whitelisted_reserves_only(&self) -> bool {
+        self.allow_invest_in_whitelisted_reserves_only == 1
     }
 
     pub fn compute_aum(&self, invested_total: &Fraction) -> Result<Fraction> {
@@ -472,6 +569,47 @@ impl Default for VaultAllocation {
             ctoken_vault_bump: 0,
             config_padding: [0; 127],
             state_padding: [0; 128],
+        }
+    }
+}
+
+static_assertions::const_assert_eq!(
+    RESERVE_WHITELIST_ENTRY_SIZE,
+    std::mem::size_of::<ReserveWhitelistEntry>()
+);
+static_assertions::const_assert_eq!(0, std::mem::size_of::<ReserveWhitelistEntry>() % 8);
+#[account]
+pub struct ReserveWhitelistEntry {
+    /// The token mint is stored to solve the problem of finding all the whitelisted reserves for a particular token mint:
+    /// when storing the token mint inside the PDA, finding all the whitelisted reserves becomes a `getProgramAccounts` with
+    /// a filter on discriminator + the mint field
+    /// The reserve pubkey, as seed of the reserve whitelist PDA account, it stored so you can link back the PDA to its seeds
+    /// (for instance, in the operation above we easily find the reserve corresponding to the PDA)
+    pub token_mint: Pubkey,
+    pub reserve: Pubkey,
+    pub whitelist_add_allocation: u8,
+    pub whitelist_invest: u8,
+    pub padding: [u8; 62],
+}
+
+impl ReserveWhitelistEntry {
+    pub fn is_add_allocation_whitelisted(&self) -> bool {
+        self.whitelist_add_allocation == 1
+    }
+
+    pub fn is_invest_whitelisted(&self) -> bool {
+        self.whitelist_invest == 1
+    }
+}
+
+impl Default for ReserveWhitelistEntry {
+    fn default() -> Self {
+        Self {
+            token_mint: Pubkey::default(),
+            reserve: Pubkey::default(),
+            whitelist_add_allocation: 0,
+            whitelist_invest: 0,
+            padding: [0; 62],
         }
     }
 }

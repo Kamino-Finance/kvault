@@ -5,7 +5,11 @@ use anchor_spl::{
 };
 use kamino_lending::Reserve;
 
-use crate::{utils::consts::CTOKEN_VAULT_SEED, xmsg, KaminoVaultError, VaultState};
+use crate::{
+    operations::reserve_whitelist_operations,
+    utils::consts::{CTOKEN_VAULT_SEED, WHITELISTED_RESERVES_SEED},
+    xmsg, KaminoVaultError, ReserveWhitelistEntry, VaultState,
+};
 
 /// Update the allocation of a reserve; vault admin can insert a new reserve or update the allocation of an existing reserve, but the allocation admin can only update the allocation of existing reserves.
 pub fn process(
@@ -35,6 +39,7 @@ pub fn process(
             );
         }
     }
+
     let ctoken_vault_bump = ctx.bumps.ctoken_vault;
     xmsg!(
         "Updating reserve {reserve_symbol:?} {reserve_key} with weight {target_allocation_weight} and cap {allocation_cap}",
@@ -42,6 +47,17 @@ pub fn process(
     );
 
     require_eq!(reserve.liquidity.mint_pubkey, vault.token_mint);
+
+    reserve_whitelist_operations::check_can_update_allocation_weight(
+        vault,
+        idx,
+        target_allocation_weight,
+        allocation_cap,
+        ctx.accounts
+            .reserve_whitelist_entry
+            .as_ref()
+            .map(|acc| acc.as_ref()),
+    )?;
 
     vault.upsert_reserve_allocation(
         reserve_key,
@@ -85,6 +101,12 @@ pub struct UpdateReserveAllocation<'info> {
         token::token_program = reserve_collateral_token_program
     )]
     pub ctoken_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    #[account(
+        seeds = [WHITELISTED_RESERVES_SEED, reserve.key().as_ref()],
+        bump
+    )]
+    pub reserve_whitelist_entry: Option<Account<'info, ReserveWhitelistEntry>>,
 
     pub reserve_collateral_token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

@@ -1,6 +1,6 @@
 [package]
 name = "kamino_vault"
-version = "1.0.0"
+version = "2.0.0"
 description = "Kamino lending vault Solana program"
 edition = "2021"
 license = "BUSL-1.1"
@@ -19,7 +19,11 @@ cpi = ["no-entrypoint"]
 default = []
 serde = ["dep:serde", "fixed/serde-str"]
 staging = []
-idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "kamino_lending/idl-build"]
+idl-build = [
+    "anchor-lang/idl-build",
+    "anchor-spl/idl-build",
+    "kamino_lending/idl-build",
+]
 test-sbf = []
 
 [dependencies]
@@ -35,7 +39,9 @@ bytemuck.workspace = true
 rust_decimal = { version = "1.26.0", features = ["maths"] }
 derivative = "2.2.0"
 num_enum = "0.7.0"
-strum = { git = "https://github.com/Kamino-Finance/strum", features = ["derive"], branch = "checked_arithmetics" }
+strum = { git = "https://github.com/Kamino-Finance/strum", features = [
+    "derive",
+], branch = "checked_arithmetics" }
 
 static_assertions = "1.1.0"
 derive_builder = "0.13.0"
@@ -45,7 +51,7 @@ uint = "0.9.5"
 arrform = "0.1.1"
 kamino_lending = { git = "https://github.com/Kamino-Finance/klend.git", features = [
     "no-entrypoint",
-], branch = "full_mul_int_ratio_ceil" }
+], tag = "release/v1.12.6" }
 
 # Only required when serializing to market config to JSON and in tests
 serde = { workspace = true, optional = true }

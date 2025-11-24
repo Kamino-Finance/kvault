@@ -181,11 +181,11 @@ pub struct WithdrawPendingFees<'info> {
     #[account(mut)]
     pub base_vault_authority: AccountInfo<'info>,
 
-    /// CHECK: the fields of the associated_token account are stored in the vault state
+    /// CHECK: the fields of the token account are stored in the vault state
     #[account(mut,
-        associated_token::mint = token_mint,
-        associated_token::authority = vault_admin_authority,
-        associated_token::token_program = token_program,
+        token::mint = token_mint,
+        token::authority = vault_admin_authority,
+        token::token_program = token_program,
     )]
     pub token_ata: InterfaceAccount<'info, TokenAccount>,
 

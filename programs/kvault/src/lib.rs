@@ -9,6 +9,8 @@ pub mod state;
 pub mod utils;
 
 use crate::handlers::*;
+pub use crate::operations::reserve_whitelist_operations::UpdateReserveWhitelistMode;
+pub use crate::operations::vault_config_operations::VaultConfigField;
 pub use crate::state::*;
 
 #[cfg(feature = "staging")]
@@ -53,10 +55,28 @@ pub mod kamino_vault {
         handler_deposit::process(ctx, max_amount)
     }
 
+    pub fn buy<'info>(
+        ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
+        max_amount: u64,
+    ) -> Result<()> {
+        // Interface to buy vault tokens, to be improved
+        // later to go through DEXes also
+        handler_deposit::process(ctx, max_amount)
+    }
+
     pub fn withdraw<'info>(
         ctx: Context<'_, '_, '_, 'info, Withdraw<'info>>,
         shares_amount: u64,
     ) -> Result<()> {
+        handler_withdraw::withdraw(ctx, shares_amount)
+    }
+
+    pub fn sell<'info>(
+        ctx: Context<'_, '_, '_, 'info, Withdraw<'info>>,
+        shares_amount: u64,
+    ) -> Result<()> {
+        // Interface to sell vault tokens, to be improved
+        // later to go through DEXes also
         handler_withdraw::withdraw(ctx, shares_amount)
     }
 
@@ -116,6 +136,28 @@ pub mod kamino_vault {
 
     pub fn remove_allocation(ctx: Context<RemoveAllocation>) -> Result<()> {
         handler_remove_allocation::process(ctx)
+    }
+
+    pub fn init_global_config(ctx: Context<InitGlobalConfig>) -> Result<()> {
+        handler_initialize_global_config::process(ctx)
+    }
+
+    pub fn update_global_config(
+        ctx: Context<UpdateGlobalConfig>,
+        update: utils::global_config::UpdateGlobalConfigMode,
+    ) -> Result<()> {
+        handler_update_global_config::process(ctx, update)
+    }
+
+    pub fn update_global_config_admin(ctx: Context<UpdateGlobalConfigAdmin>) -> Result<()> {
+        handler_update_global_config_admin::process(ctx)
+    }
+
+    pub fn add_update_whitelisted_reserve(
+        ctx: Context<AddUpdateWhitelistedReserve>,
+        update: UpdateReserveWhitelistMode,
+    ) -> Result<()> {
+        handler_add_update_whitelisted_reserve::process(ctx, update)
     }
 }
 
@@ -269,6 +311,27 @@ pub enum KaminoVaultError {
 
     #[msg("Deposit amount is greater than requested amount")]
     DepositAmountGreaterThanRequestedAmount,
+
+    #[msg("Withdraw amount is less than withdrawal penalty")]
+    WithdrawAmountLessThanWithdrawalPenalty,
+
+    #[msg("Cannot withdraw 0 lamports")]
+    CannotWithdrawZeroLamports,
+
+    #[msg("Cannot initialize global config because there is no upgrade authority to the program")]
+    NoUpgradeAuthority,
+
+    #[msg("Withdrawal fee BPS is greater than maximum allowed")]
+    WithdrawalFeeBPSGreaterThanMaxAllowed,
+
+    #[msg("Withdrawal fee lamports is greater than maximum allowed")]
+    WithdrawalFeeLamportsGreaterThanMaxAllowed,
+
+    #[msg("Reserve is not whitelisted")]
+    ReserveNotWhitelisted,
+
+    #[msg("Invalid bool-like value passed in (should be 0 or 1)")]
+    InvalidBoolLikeValue,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

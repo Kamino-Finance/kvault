@@ -90,19 +90,19 @@ macro_rules! kmsg {
         match $fmt.len() {
             0..=50 => {
                 let formatted = $crate::arrform!{250, $fmt};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             },
             51..=100 => {
                 let formatted = $crate::arrform!{400, $fmt};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             },
             101..=200 => {
                 let formatted = $crate::arrform!{700, $fmt};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             },
             _ => {
                 let formatted = $crate::arrform!{1300, $fmt};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             }
         }
     }};
@@ -114,19 +114,19 @@ macro_rules! kmsg {
         match $fmt.len() {
             0..=50 => {
                 let formatted = $crate::arrform!{150, $fmt, $($arg),+};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             },
             51..=100 => {
                 let formatted = $crate::arrform!{300, $fmt, $($arg),+};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             },
             101..=200 => {
                 let formatted = $crate::arrform!{600, $fmt, $($arg),+};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             },
             _ => {
                 let formatted = $crate::arrform!{1200, $fmt, $($arg),+};
-                anchor_lang::prelude::msg!("{}", formatted.as_str());
+                solana_program::log::sol_log(formatted.as_str());
             }
         }
     }};
@@ -137,10 +137,10 @@ macro_rules! kmsg {
 macro_rules! kmsg_sized {
     ($capacity:expr, $fmt:expr) => {{
         let formatted = $crate::arrform!{$capacity, $fmt};
-        anchor_lang::prelude::msg!("{}", formatted.as_str());
+        solana_program::log::sol_log(formatted.as_str());
     }};
     ($capacity:expr, $fmt:expr, $($arg:expr),+) => {{
         let formatted = $crate::arrform!($capacity, $fmt, $($arg),+);
-        anchor_lang::prelude::msg!("{}", formatted.as_str());
+        solana_program::log::sol_log(formatted.as_str());
     }};
 }

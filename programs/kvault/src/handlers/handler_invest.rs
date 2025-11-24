@@ -5,10 +5,13 @@ use anchor_lang::{
 };
 use anchor_spl::{
     token::Token,
-    token_interface::{self, Mint, TokenAccount, TokenInterface},
+    token_interface::{self, accessor::amount, Mint, TokenAccount, TokenInterface},
 };
-use kamino_lending::{utils::FatAccountLoader, Reserve};
-use token_interface::accessor::amount;
+use kamino_lending::{
+    utils::{AnyAccountLoader, FatAccountLoader, Fraction},
+    Reserve,
+};
+use solana_program::clock::Slot;
 
 use crate::{
     kmsg,
@@ -22,7 +25,7 @@ use crate::{
         },
     },
     utils::{consts::*, cpi_mem::CpiMemoryLender},
-    VaultState,
+    ReserveWhitelistEntry, VaultState,
 };
 
 pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<()> {
@@ -66,6 +69,9 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
         .take(reserves_count)
         .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
+    let initial_holdings_total =
+        holdings(vault_state, reserves_iter.clone(), current_slot)?.total_sum;
+
     // Use vault_operations::invest directly which uses the holdings function internally
     let invest_effects = vault_operations::invest(
         vault_state,
@@ -74,6 +80,10 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
         reserve_address,
         current_slot,
         current_timestamp,
+        ctx.accounts
+            .reserve_whitelist_entry
+            .as_ref()
+            .map(|acc| acc.as_ref()),
     )?;
 
     let InvestEffects {
@@ -91,10 +101,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
         rounding_loss
     );
 
-    let invested_total = holdings(vault_state, reserves_iter.clone(), current_slot)?
-        .invested
-        .total;
-    let initial_aum = vault_state.compute_aum(&invested_total)?;
+    let aum_before_transfers = capture_aum(vault_state, reserves_iter.clone(), current_slot)?;
 
     drop(reserve);
 
@@ -144,9 +151,9 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
 
     drop(cpi_mem);
 
-    let (_, invested_after) =
-        underlying_inventory(vault_state, reserves_iter.clone(), current_slot)?;
-    let aum_after_invest = vault_state.compute_aum(&invested_after.total)?;
+    let aum_after_transfers = capture_aum(vault_state, reserves_iter.clone(), current_slot)?;
+    let final_holdings_total =
+        holdings(vault_state, reserves_iter.clone(), current_slot)?.total_sum;
 
     let token_vault_after = amount(&ctx.accounts.token_vault.to_account_info())?;
     let ctoken_vault_after = amount(&ctx.accounts.ctoken_vault.to_account_info())?;
@@ -164,11 +171,22 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
             reserve_supply_liquidity_balance: reserve_liquidity_after,
         },
         invest_effects,
-        initial_aum,
-        aum_after_invest,
+        initial_holdings_total,
+        final_holdings_total,
+        aum_before_transfers,
+        aum_after_transfers,
     )?;
 
     Ok(())
+}
+
+fn capture_aum<'info, T: AnyAccountLoader<'info, Reserve>>(
+    vault_state: &VaultState,
+    reserves_iter: impl Iterator<Item = T>,
+    current_slot: Slot,
+) -> Result<Fraction> {
+    let (_, invested) = underlying_inventory(vault_state, reserves_iter, current_slot)?;
+    vault_state.compute_aum(&invested.total)
 }
 
 #[derive(Accounts)]
@@ -223,6 +241,12 @@ pub struct Invest<'info> {
     /// CHECK: on klend CPI call
     #[account(mut)]
     pub reserve_collateral_mint: AccountInfo<'info>,
+
+    #[account(
+        seeds = [WHITELISTED_RESERVES_SEED, reserve.key().as_ref()],
+        bump
+    )]
+    pub reserve_whitelist_entry: Option<Account<'info, ReserveWhitelistEntry>>,
 
     pub klend_program: Program<'info, kamino_lending::program::KaminoLending>,
     pub reserve_collateral_token_program: Program<'info, Token>,

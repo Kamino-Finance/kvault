@@ -151,8 +151,10 @@ pub fn post_transfer_invest_checks(
     amounts_before: VaultBalances,
     amounts_after: VaultBalances,
     invest_effects: InvestEffects,
-    aum_before: Fraction,
-    aum_after: Fraction,
+    initial_holdings_total: Fraction,
+    final_holdings_total: Fraction,
+    aum_before_transfers: Fraction,
+    aum_after_transfers: Fraction,
 ) -> Result<()> {
     let InvestEffects {
         direction,
@@ -192,8 +194,21 @@ pub fn post_transfer_invest_checks(
         }
     }
 
-    require!(
-        aum_after.ge(&aum_before),
+    // The "holdings total" amount includes pending fees (which do change during invest() accounting
+    // due to charge_fees()). This total amount should not decrease over the entire invest call:
+    require_gte!(
+        final_holdings_total,
+        initial_holdings_total,
+        KaminoVaultError::AUMDecreasedAfterInvest
+    );
+
+    // As noted above, the true AUM (which does not include pending fees) can legitimately decrease
+    // during invest() when charged management fees were greater than the yield. But they should
+    // *not* decrease due to klend deposit/withdraw CPIs alone (i.e. any rounding effects and
+    // minuscule exchange rate changes should favor the protocol):
+    require_gte!(
+        aum_after_transfers,
+        aum_before_transfers,
         KaminoVaultError::AUMDecreasedAfterInvest
     );
 

@@ -18,7 +18,7 @@ use crate::{
     kmsg, kmsg_sized,
     operations::vault_operations::common::{get_shares_to_mint, holdings},
     utils::consts::SECONDS_PER_YEAR,
-    xmsg, KaminoVaultError, VaultState, MAX_RESERVES,
+    xmsg, GlobalConfig, KaminoVaultError, ReserveWhitelistEntry, VaultState, MAX_RESERVES,
 };
 
 pub fn initialize(
@@ -112,6 +112,7 @@ where
 #[inline(never)]
 pub fn withdraw<'info, T>(
     vault: &mut VaultState,
+    global_config: &GlobalConfig,
     reserve_address_to_withdraw_from: Option<&Pubkey>,
     reserve_state_to_withdraw_from: Option<&Reserve>,
     reserves_iter: impl Iterator<Item = T>,
@@ -148,6 +149,29 @@ where
         current_vault_aum,
         number_of_shares,
     );
+    require!(
+        total_for_user > 0,
+        KaminoVaultError::CannotWithdrawZeroLamports
+    );
+
+    // use as withdrawal fee the max of the withdrawal fee lamports and the withdrawal fee bps and lamports between the global config and the vault state
+    let withdrawal_penalty_lamports = global_config
+        .withdrawal_penalty_lamports
+        .max(vault.withdrawal_penalty_lamports);
+    let withdrawal_penalty_bps = global_config
+        .withdrawal_penalty_bps
+        .max(vault.withdrawal_penalty_bps);
+
+    let withdrawal_penalty = common::get_withdrawal_penalty(
+        total_for_user,
+        withdrawal_penalty_lamports,
+        withdrawal_penalty_bps,
+    );
+    require!(
+        withdrawal_penalty < total_for_user,
+        KaminoVaultError::WithdrawAmountLessThanWithdrawalPenalty
+    );
+    let total_for_user = total_for_user - withdrawal_penalty;
 
     // Calculate how much the user is allowed to withdraw given a max combo of
     // available + reserve
@@ -212,8 +236,10 @@ where
     };
 
     let invested_liquidity_to_send_to_user: u64 = invested_liquidity_to_send_to_user_f.to_floor();
+    // this theoretical amount is how much the user would receive from the vault, including the fractional part and the withdrawal penalty that will remain in the vault
     let theoretical_amount_to_send_to_user_f =
-        Fraction::from(available_to_send_to_user) + invested_liquidity_to_send_to_user_f;
+        Fraction::from(available_to_send_to_user + withdrawal_penalty)
+            + invested_liquidity_to_send_to_user_f;
     let actual_invested_liquidity_to_send_to_user =
         invested_liquidity_to_send_to_user - liquidity_rounding_error;
 
@@ -264,10 +290,11 @@ where
             reserve_address,
         )?;
     }
-    common::update_prev_aum(
-        vault,
-        current_vault_aum - theoretical_amount_to_send_to_user_f,
-    );
+
+    // the amount that is withdrawn from the vault (the theoretical amount to send to the user minus the withdrawal penalty which remains in the vault)
+    let net_amount_withdrawn_from_vault =
+        theoretical_amount_to_send_to_user_f - Fraction::from(withdrawal_penalty);
+    common::update_prev_aum(vault, current_vault_aum - net_amount_withdrawn_from_vault);
 
     Ok(WithdrawEffects {
         shares_to_burn,
@@ -413,6 +440,7 @@ pub fn invest<'info, T>(
     reserve_address: &Pubkey,
     current_slot: Slot,
     current_timestamp: u64,
+    reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
 ) -> Result<InvestEffects>
 where
     T: AnyAccountLoader<'info, Reserve>,
@@ -476,6 +504,18 @@ where
 
     if liquidity_f <= vault.min_invest_amount {
         return err!(KaminoVaultError::InvestAmountBelowMinimum);
+    }
+
+    match direction {
+        InvestingDirection::Add if vault.vault_allows_invest_in_whitelisted_reserves_only() => {
+            let reserve_whitelist_entry =
+                reserve_whitelist_entry.ok_or(KaminoVaultError::ReserveNotWhitelisted)?;
+            require!(
+                reserve_whitelist_entry.is_invest_whitelisted(),
+                KaminoVaultError::ReserveNotWhitelisted
+            );
+        }
+        InvestingDirection::Add | InvestingDirection::Subtract => {}
     }
 
     let exchange_rate = reserve.collateral_exchange_rate();
@@ -597,8 +637,13 @@ pub fn charge_fees(vault: &mut VaultState, invested: &Invested, timestamp: u64) 
 
 pub mod common {
     use anchor_lang::{error, Result};
-    use kamino_lending::{utils::AnyAccountLoader, PriceStatusFlags, Reserve};
+    use kamino_lending::{
+        utils::{AnyAccountLoader, FULL_BPS},
+        PriceStatusFlags, Reserve,
+    };
     use solana_program::pubkey::Pubkey;
+
+    use crate::utils::fraction_utils::full_mul_fraction_ratio_ceil;
 
     use super::*;
 
@@ -748,6 +793,17 @@ pub mod common {
         total_for_user
     }
 
+    pub fn get_withdrawal_penalty(
+        total_amount_withdrawn: u64,
+        withdrawal_penalty_lamports: u64,
+        withdrawal_penalty_bps: u64,
+    ) -> u64 {
+        let withdrawal_penalty_from_bps = Fraction::from(total_amount_withdrawn)
+            .full_mul_int_ratio(withdrawal_penalty_bps, FULL_BPS)
+            .to_ceil::<u64>();
+        withdrawal_penalty_from_bps.max(withdrawal_penalty_lamports)
+    }
+
     pub fn compute_amount_to_deposit_from_shares_to_mint(
         vault_total_shares: u64,
         vault_total_holdings: Fraction,
@@ -772,16 +828,21 @@ pub mod common {
         common::burn_shares(vault, shares_to_burn);
     }
 
+    /// calculate the number of shares to burn (rounded up) as amount_to_send_to_user * total_shares_supply / total_vault_aum, capped by the number of shares.
+    /// When doing the computation we round up the fractional part using full_mul_int_ratio_ceil and we ceil the result to the nearest integer as the shares to burn is an integer.
     pub fn calculate_shares_to_burn(
         amount_to_send_to_user: Fraction,
-        total_supply: u64,
-        total_sum: Fraction,
-        number_of_shares: u64,
+        total_shares_supply: u64,
+        total_vault_aum: Fraction,
+        max_shares_to_burn: u64,
     ) -> u64 {
-        (amount_to_send_to_user
-            .full_mul_int_ratio(total_supply, total_sum.to_floor::<u64>())
-            .to_ceil::<u64>())
-        .min(number_of_shares)
+        (full_mul_fraction_ratio_ceil(
+            amount_to_send_to_user,
+            Fraction::from_num(total_shares_supply),
+            total_vault_aum,
+        )
+        .to_ceil::<u64>())
+        .min(max_shares_to_burn)
     }
 
     pub fn deposit_into_vault_allocation(

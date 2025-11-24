@@ -15,11 +15,11 @@ use crate::{
         vault_operations,
     },
     utils::{
-        consts::CTOKEN_VAULT_SEED,
+        consts::{CTOKEN_VAULT_SEED, GLOBAL_CONFIG_STATE_SEEDS},
         cpi_mem::CpiMemoryLender,
         token_ops::{self, shares},
     },
-    KaminoVaultError, VaultState,
+    GlobalConfig, KaminoVaultError, VaultState,
 };
 
 pub fn withdraw<'info>(
@@ -119,6 +119,12 @@ pub struct WithdrawFromAvailable<'info> {
     )]
     pub vault_state: AccountLoader<'info, VaultState>,
 
+    #[account(
+        seeds = [GLOBAL_CONFIG_STATE_SEEDS],
+        bump,
+    )]
+    pub global_config: AccountLoader<'info, GlobalConfig>,
+
     #[account(mut,
         token::token_program = token_program,
     )]
@@ -129,9 +135,9 @@ pub struct WithdrawFromAvailable<'info> {
 
     /// CHECK: vault_state checks the token mint and the token program
     #[account(mut,
-        associated_token::mint = vault_state.load()?.token_mint.key(),
-        associated_token::authority = user,
-        associated_token::token_program = token_program,
+        token::mint = vault_state.load()?.token_mint.key(),
+        token::authority = user,
+        token::token_program = token_program,
     )]
     pub user_token_ata: InterfaceAccount<'info, TokenAccount>,
 
@@ -140,9 +146,9 @@ pub struct WithdrawFromAvailable<'info> {
     pub token_mint: AccountInfo<'info>,
 
     #[account(mut,
-        associated_token::mint = shares_mint,
-        associated_token::authority = user,
-        associated_token::token_program = shares_token_program,
+        token::mint = shares_mint,
+        token::authority = user,
+        token::token_program = shares_token_program,
     )]
     pub user_shares_ata: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut)]
@@ -183,6 +189,7 @@ pub mod withdraw_utils {
 
         let vault_state: &mut std::cell::RefMut<'_, VaultState> =
             &mut withdraw_from_available_accounts.vault_state.load_mut()?;
+        let global_config = &withdraw_from_available_accounts.global_config.load()?;
         let reserves_count = vault_state.get_reserves_count();
 
         // Cache some values for withdraw from available
@@ -245,6 +252,7 @@ pub mod withdraw_utils {
 
         let withdraw_effects = vault_operations::withdraw(
             vault_state,
+            global_config,
             reserve_address_to_withdraw_from,
             reserve_state_to_withdraw_from.as_deref(),
             reserves_iter,

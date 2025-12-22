@@ -57,17 +57,23 @@ pub fn check_if_signer_allowed_to_update_vault_config(
                 return Err(KaminoVaultError::InvalidBoolLikeValue.into());
             }
         }
-        VaultConfigField::PerformanceFeeBps
-        | VaultConfigField::ManagementFeeBps
-        | VaultConfigField::MinDepositAmount
+
+        VaultConfigField::MinDepositAmount
         | VaultConfigField::MinWithdrawAmount
         | VaultConfigField::MinInvestAmount
         | VaultConfigField::MinInvestDelaySlots
         | VaultConfigField::CrankFundFeePerReserve
-        | VaultConfigField::PendingVaultAdmin
-        | VaultConfigField::Name
         | VaultConfigField::LookupTable
-        | VaultConfigField::Farm
+        | VaultConfigField::Name
+        | VaultConfigField::Farm => {
+            require!(
+                is_global_admin || is_vault_admin,
+                KaminoVaultError::AdminAuthorityIncorrect
+            );
+        }
+        VaultConfigField::PendingVaultAdmin
+        | VaultConfigField::PerformanceFeeBps
+        | VaultConfigField::ManagementFeeBps
         | VaultConfigField::FirstLossCapitalFarm
         | VaultConfigField::AllocationAdmin
         | VaultConfigField::UnallocatedWeight

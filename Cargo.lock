@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "kamino_vault"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anchor-lang",
  "anchor-spl",

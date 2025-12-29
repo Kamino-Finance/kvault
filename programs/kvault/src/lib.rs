@@ -5,6 +5,7 @@ use anchor_lang::prelude::*;
 pub mod events;
 mod handlers;
 pub mod operations;
+pub mod program_id;
 pub mod state;
 pub mod utils;
 
@@ -12,12 +13,9 @@ use crate::handlers::*;
 pub use crate::operations::reserve_whitelist_operations::UpdateReserveWhitelistMode;
 pub use crate::operations::vault_config_operations::VaultConfigField;
 pub use crate::state::*;
+pub use program_id::KVAULT_PROGRAM_ID;
 
-#[cfg(feature = "staging")]
-declare_id!("stKvQfwRsQiKnLtMNVLHKS3exFJmZFsgfzBPWHECUYK");
-
-#[cfg(not(feature = "staging"))]
-declare_id!("KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd");
+declare_id!(KVAULT_PROGRAM_ID);
 
 #[cfg(not(feature = "no-entrypoint"))]
 solana_security_txt::security_txt! {

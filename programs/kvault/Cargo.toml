@@ -1,6 +1,6 @@
 [package]
 name = "kamino_vault"
-version = "2.0.0"
+version = "2.0.1"
 description = "Kamino lending vault Solana program"
 edition = "2021"
 license = "BUSL-1.1"
@@ -12,18 +12,16 @@ crate-type = ["cdylib", "lib"]
 name = "kamino_vault"
 
 [features]
+default = ["mainnet"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
-default = []
 serde = ["dep:serde", "fixed/serde-str"]
+mainnet = []
 staging = []
-idl-build = [
-    "anchor-lang/idl-build",
-    "anchor-spl/idl-build",
-    "kamino_lending/idl-build",
-]
+staging-to-staging = ["kamino_lending/staging"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "kamino_lending/idl-build"]
 test-sbf = []
 
 [dependencies]
@@ -39,9 +37,7 @@ bytemuck.workspace = true
 rust_decimal = { version = "1.26.0", features = ["maths"] }
 derivative = "2.2.0"
 num_enum = "0.7.0"
-strum = { git = "https://github.com/Kamino-Finance/strum", features = [
-    "derive",
-], branch = "checked_arithmetics" }
+strum = { git = "https://github.com/Kamino-Finance/strum", features = ["derive"], branch = "checked_arithmetics" }
 
 static_assertions = "1.1.0"
 derive_builder = "0.13.0"

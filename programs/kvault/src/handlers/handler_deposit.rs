@@ -19,7 +19,7 @@ pub fn process<'info>(
     ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
     max_amount: u64,
 ) -> Result<()> {
-    // CHECKS
+   
     require!(max_amount > 0, KaminoVaultError::DepositAmountsZero);
 
     let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender(
@@ -30,7 +30,7 @@ pub fn process<'info>(
     let reserves_count = vault_state.get_reserves_count();
 
     {
-        // Refresh all reserves
+       
         klend_operations::cpi_refresh_reserves(
             &mut cpi_mem,
             ctx.remaining_accounts.iter().take(reserves_count),
@@ -68,7 +68,7 @@ pub fn process<'info>(
         crank_funds_to_deposit,
     });
 
-    // Deposit from user token
+   
     token_ops::tokens::transfer_to_vault(
         &UserTransferAccounts {
             token_program: ctx.accounts.token_program.to_account_info(),
@@ -81,7 +81,7 @@ pub fn process<'info>(
         ctx.accounts.token_mint.decimals,
     )?;
 
-    // Mint shares
+   
     shares::mint(
         ctx.accounts.shares_token_program.to_account_info(),
         ctx.accounts.shares_mint.to_account_info(),
@@ -92,7 +92,7 @@ pub fn process<'info>(
         shares_to_mint,
     )?;
 
-    // Post checks
+   
     let user_ata_balance_after = amount(&ctx.accounts.user_token_ata.to_account_info())?;
     let user_shares_balance_after = amount(&ctx.accounts.user_shares_ata.to_account_info())?;
     let user_shares_gained = user_shares_balance_after - user_initial_shares_balance;

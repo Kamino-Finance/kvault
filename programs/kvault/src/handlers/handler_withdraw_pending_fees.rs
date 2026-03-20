@@ -28,7 +28,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
     let reserves_count = vault_state.get_reserves_count();
 
     {
-        // Refresh all reserves
+       
         klend_operations::cpi_refresh_reserves(
             &mut cpi_mem,
             ctx.remaining_accounts.iter().take(reserves_count),
@@ -40,7 +40,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
     let bump = vault_state.base_vault_authority_bump;
     let reserve_address = ctx.accounts.reserve.to_account_info().key;
 
-    // Cache some values
+   
     let token_vault_before = ctx.accounts.token_vault.amount;
     let ctoken_vault_before = ctx.accounts.ctoken_vault.amount;
     let admin_ata_before = ctx.accounts.token_ata.amount;
@@ -85,7 +85,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
 
     drop(reserve);
 
-    //1. Disinvest from reserve to the kvault token vault
+
     if invested_to_disinvest_ctokens > 0 {
         klend_operations::cpi_redeem_reserve_liquidity_from_withdraw_pending_fees(
             &ctx,
@@ -103,7 +103,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
         KaminoVaultError::NotEnoughLiquidityDisinvestedToSendToUser
     );
 
-    // 2. Send all the owed tokens to the admin
+   
     token_ops::tokens::transfer_to_token_account(
         &token_ops::tokens::VaultTransferAccounts {
             token_program: ctx.accounts.token_program.to_account_info(),
@@ -118,7 +118,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
         u8::try_from(vault_state.token_mint_decimals).unwrap(),
     )?;
 
-    // Post checks
+   
     let token_vault_after = amount(&ctx.accounts.token_vault.to_account_info())?;
     let ctoken_vault_after = amount(&ctx.accounts.ctoken_vault.to_account_info())?;
     let admin_ata_after = amount(&ctx.accounts.token_ata.to_account_info())?;
@@ -131,14 +131,14 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
             vault_token_balance: token_vault_before,
             vault_ctoken_balance: ctoken_vault_before,
             user_token_balance: admin_ata_before,
-            user_shares_balance: 0, // placeholder, we don't use shares
+            user_shares_balance: 0,
         },
         VaultAndUserBalances {
             reserve_supply_liquidity_balance: reserve_supply_liquidity_after,
             vault_token_balance: token_vault_after,
             vault_ctoken_balance: ctoken_vault_after,
             user_token_balance: admin_ata_after,
-            user_shares_balance: 0, // placeholder, we don't use shares
+            user_shares_balance: 0,
         },
         withdraw_pending_fees_effects,
     )?;

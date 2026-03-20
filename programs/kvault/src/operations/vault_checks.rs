@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use fixed::types::U68F60 as Fraction;
+use kamino_lending::utils::FractionExtra;
 
 use super::effects::{
     InvestEffects, InvestingDirection, WithdrawEffects, WithdrawPendingFeesEffects,
@@ -20,6 +21,51 @@ pub struct VaultBalances {
     pub vault_ctoken_balance: u64,
 }
 
+pub struct RedeemInKindPostCheckAmounts {
+    pub user_share_balance: u64,
+    pub vault_ctoken_balance: u64,
+    pub user_ctoken_balance: u64,
+    pub vault_aum: Fraction,
+}
+
+pub fn post_redeem_in_kind_checks(
+    amounts_before: &RedeemInKindPostCheckAmounts,
+    amounts_after: &RedeemInKindPostCheckAmounts,
+    ctokens_to_send_to_user: u64,
+    shares_to_burn: u64,
+    actual_liquidity_value: Fraction,
+) -> Result<()> {
+    require_eq!(
+        amounts_before.vault_ctoken_balance - amounts_after.vault_ctoken_balance,
+        ctokens_to_send_to_user,
+        KaminoVaultError::LiquidityToWithdrawDoesNotMatch
+    );
+    require_eq!(
+        amounts_after.user_ctoken_balance - amounts_before.user_ctoken_balance,
+        ctokens_to_send_to_user,
+        KaminoVaultError::UserReceivedAmountDoesNotMatch
+    );
+    require_eq!(
+        amounts_before.user_share_balance - amounts_after.user_share_balance,
+        shares_to_burn,
+        KaminoVaultError::SharesBurnedAmountDoesNotMatch
+    );
+
+   
+    let aum_decrease = amounts_before.vault_aum - amounts_after.vault_aum;
+    require_msg!(
+        aum_decrease <= actual_liquidity_value,
+        KaminoVaultError::AUMDecreasedMoreThanExpected,
+        &format!(
+            "AUM decreased by {} but expected at most {}",
+            aum_decrease.to_display(),
+            actual_liquidity_value.to_display()
+        )
+    );
+
+    Ok(())
+}
+
 pub fn post_transfer_withdraw_balance_checks(
     amounts_before: VaultAndUserBalances,
     amounts_after: VaultAndUserBalances,
@@ -33,7 +79,7 @@ pub fn post_transfer_withdraw_balance_checks(
         invested_liquidity_to_disinvest,
     } = withdraw_effects;
 
-    // this needs to be i128 as it can be positive if the leftover from the disinvested liquidity is less than withdrawn from available liquidity and negative if the leftover is more than withdrawn from available liquidity
+   
     let token_vault_diff: i128 = i128::from(amounts_before.vault_token_balance)
         - i128::from(amounts_after.vault_token_balance);
     let ctoken_vault_decrease =
@@ -99,10 +145,10 @@ pub fn post_transfer_withdraw_pending_fees_balance_checks(
         invested_liquidity_to_disinvest,
     } = withdraw_fees_effects;
 
-    // this can be negative if we disinvested more because of rounding and the fees send to the admin are less than the extra amount disinvested
+   
     let token_vault_diff: i128 = i128::from(amounts_before.vault_token_balance)
         - i128::from(amounts_after.vault_token_balance);
-    // ctoken_vault_diff is always positive as either we didn't disinvest at all (so the diff is 0) or we disinvested so now there are less cTokens left in the vault
+   
     let ctoken_vault_decrease =
         amounts_before.vault_ctoken_balance - amounts_after.vault_ctoken_balance;
     let reserve_supply_liquidity_diff = i128::from(amounts_before.reserve_supply_liquidity_balance)
@@ -194,18 +240,18 @@ pub fn post_transfer_invest_checks(
         }
     }
 
-    // The "holdings total" amount includes pending fees (which do change during invest() accounting
-    // due to charge_fees()). This total amount should not decrease over the entire invest call:
+   
+   
     require_gte!(
         final_holdings_total,
         initial_holdings_total,
         KaminoVaultError::AUMDecreasedAfterInvest
     );
 
-    // As noted above, the true AUM (which does not include pending fees) can legitimately decrease
-    // during invest() when charged management fees were greater than the yield. But they should
-    // *not* decrease due to klend deposit/withdraw CPIs alone (i.e. any rounding effects and
-    // minuscule exchange rate changes should favor the protocol):
+   
+   
+   
+   
     require_gte!(
         aum_after_transfers,
         aum_before_transfers,

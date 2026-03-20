@@ -19,14 +19,14 @@ pub fn process(
     reserve_whitelist_operations::update_reserve_whitelist_entry(
         reserve_whitelist_entry,
         &ctx.accounts.reserve.key(),
-        &reserve.collateral.mint_pubkey,
+        &reserve.liquidity.mint_pubkey,
         update,
     )?;
 
     xmsg!(
-        "Updated whitelisted reserve {reserve} with collateral mint {mint}",
+        "Updated whitelisted reserve {reserve} with token mint {mint}",
         reserve = ctx.accounts.reserve.key(),
-        mint = reserve.collateral.mint_pubkey
+        mint = reserve.liquidity.mint_pubkey
     );
 
     Ok(())

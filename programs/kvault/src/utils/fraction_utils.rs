@@ -10,8 +10,8 @@ pub fn full_mul_fraction_ratio_ceil(
     let big_numerator = U256::from(numerator.to_bits());
     let big_denominator = U256::from(denominator.to_bits());
 
-    // For ceiling behavior: (a * b + c - 1) / c
-    // where c is the denominator
+   
+   
     let big_sf_res = (big_sf * big_numerator + big_denominator - 1) / big_denominator;
 
     let sf_res: u128 = big_sf_res

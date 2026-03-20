@@ -34,16 +34,16 @@ macro_rules! xmsg {
 
 #[macro_export]
 macro_rules! dbg_msg {
-    // NOTE: We cannot use `concat!` to make a static string as a format argument
-    // of `eprintln!` because `file!` could contain a `{` or
-    // `$val` expression could be a block (`{ .. }`), in which case the `msg!`
-    // will be malformed.
+   
+   
+   
+   
     () => {
         $crate::xmsg!("[{}:{}]", file!(), line!())
     };
     ($val:expr $(,)?) => {
-        // Use of `match` here is intentional because it affects the lifetimes
-        // of temporaries - https://stackoverflow.com/a/48732525/1063961
+       
+       
         match $val {
             tmp => {
                 $crate::xmsg!("[{}:{}] {} = {:#?}",
@@ -79,14 +79,14 @@ macro_rules! arrform {
     }}
 }
 
-/// Log a formatted message with automatic capacity estimation
-/// Uses arrform! and msg! together for efficient logging
-/// Capacity is conservatively estimated based on format string length
+
+
+
 #[macro_export]
 macro_rules! kmsg {
-    // For formats without arguments
+   
     ($fmt:expr) => {{
-        // Choose capacity tier based on format string length
+       
         match $fmt.len() {
             0..=50 => {
                 let formatted = $crate::arrform!{250, $fmt};
@@ -107,10 +107,10 @@ macro_rules! kmsg {
         }
     }};
 
-    // For formats with arguments
+   
     ($fmt:expr, $($arg:expr),+) => {{
-        // Choose capacity tier based on format string length
-        // This is very conservative to avoid overflows
+       
+       
         match $fmt.len() {
             0..=50 => {
                 let formatted = $crate::arrform!{150, $fmt, $($arg),+};
@@ -132,7 +132,7 @@ macro_rules! kmsg {
     }};
 }
 
-/// Same as kmsg! but allows specifying a custom capacity
+
 #[macro_export]
 macro_rules! kmsg_sized {
     ($capacity:expr, $fmt:expr) => {{

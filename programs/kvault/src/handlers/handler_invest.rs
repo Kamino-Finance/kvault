@@ -40,7 +40,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
     let reserves_count = vault_state.get_reserves_count();
 
     {
-        // Refresh all reserves
+       
         klend_operations::cpi_refresh_reserves(
             &mut cpi_mem,
             ctx.remaining_accounts.iter().take(reserves_count),
@@ -72,7 +72,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
     let initial_holdings_total =
         holdings(vault_state, reserves_iter.clone(), current_slot)?.total_sum;
 
-    // Use vault_operations::invest directly which uses the holdings function internally
+   
     let invest_effects = vault_operations::invest(
         vault_state,
         reserves_iter.clone(),
@@ -106,7 +106,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
     drop(reserve);
 
     if rounding_loss > 0 {
-        // Recover the rounding loss from the crank funds
+       
         token_interface::transfer_checked(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),

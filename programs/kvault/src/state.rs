@@ -95,7 +95,7 @@ static_assertions::const_assert_eq!(0, std::mem::size_of::<VaultState>() % 16);
 #[account(zero_copy)]
 #[derive(AnchorDeserialize, PartialEq, Eq)]
 pub struct VaultState {
-    // Admin
+   
     pub vault_admin_authority: Pubkey,
 
     pub base_vault_authority: Pubkey,
@@ -106,11 +106,11 @@ pub struct VaultState {
     pub token_vault: Pubkey,
     pub token_program: Pubkey,
 
-    // shares
+   
     pub shares_mint: Pubkey,
     pub shares_mint_decimals: u64,
 
-    // accounting
+   
     pub token_available: u64,
     pub shares_issued: u64,
 
@@ -121,13 +121,13 @@ pub struct VaultState {
     pub management_fee_bps: u64,
     pub last_fee_charge_timestamp: u64,
     pub prev_aum_sf: u128,
-    // todo: should we split this into pending_mgmt_fee and pending_perf_fee?
+   
     pub pending_fees_sf: u128,
 
     pub vault_allocation_strategy: [VaultAllocation; MAX_RESERVES],
     pub padding_1: [u128; 256],
 
-    // General config
+   
     pub min_deposit_amount: u64,
     pub min_withdraw_amount: u64,
     pub min_invest_amount: u64,
@@ -136,7 +136,7 @@ pub struct VaultState {
 
     pub pending_admin: Pubkey,
 
-    pub cumulative_earned_interest_sf: u128, // this represents the raw total interest earned by the vault, including the fees
+    pub cumulative_earned_interest_sf: u128,
     pub cumulative_mgmt_fees_sf: u128,
     pub cumulative_perf_fees_sf: u128,
 
@@ -146,7 +146,7 @@ pub struct VaultState {
 
     pub creation_timestamp: u64,
 
-    // when computing the amounts to invest in each reserve and how much to leave unallocated we use this cap as the max value that can stay uninvested; if set to 0 (for backwards compatibility) it means the same thing as U64::MAX
+   
     pub unallocated_tokens_cap: u64,
     pub allocation_admin: Pubkey,
 
@@ -158,7 +158,7 @@ pub struct VaultState {
     pub allow_allocations_in_whitelisted_reserves_only: u8,
     pub allow_invest_in_whitelisted_reserves_only: u8,
 
-    pub padding_4: [u8; 14],
+    pub padding_2: [u8; 14],
     pub padding_3: [u128; 238],
 }
 
@@ -236,7 +236,7 @@ impl VaultState {
     }
 
     pub fn compute_aum(&self, invested_total: &Fraction) -> Result<Fraction> {
-        // if the vault only has pending fees, it should not be possible to withdraw
+       
         let pending_fees = self.get_pending_fees();
 
         if Fraction::from(self.token_available) + invested_total < pending_fees {
@@ -294,7 +294,7 @@ impl VaultState {
     }
 
     pub fn is_allocated_to_reserve(&self, reserve: Pubkey) -> bool {
-        // TODO: make this more sophisticated
+       
         self.vault_allocation_strategy
             .iter()
             .any(|r| r.reserve == reserve)
@@ -334,19 +334,19 @@ impl VaultState {
 
         match idx {
             Some(idx) => {
-                // Already exists, update it
+               
                 self.vault_allocation_strategy[idx].target_allocation_weight =
                     target_allocation_weight;
 
                 self.vault_allocation_strategy[idx].token_allocation_cap = allocation_cap;
             }
             None => {
-                // Doesn't exist yet
+               
                 let idx = self
                     .vault_allocation_strategy
                     .iter()
                     .position(|r| {
-                        // Find an empty allocation
+                       
                         r.reserve == Pubkey::default()
                     })
                     .ok_or(error!(KaminoVaultError::ReserveSpaceExhausted))?;
@@ -394,12 +394,12 @@ impl VaultState {
             .iter()
             .filter(|r| r.reserve != Pubkey::default() && r.token_allocation_cap > 0)
             .map(|r| r.target_allocation_weight)
-            .sum::<u64>(); // this doesn't contain the unallocated weight, the amount to remain unallocated is computed first and then allocate to the reserves
+            .sum::<u64>();
 
         let mut remaining_tokens_to_allocate = total_tokens;
         let mut token_target_allocations = [Fraction::ZERO; MAX_RESERVES];
 
-        // First handle unallocated amount if there's unallocated weight
+       
         if self.unallocated_weight > 0 {
             let unallocated_cap = if self.unallocated_tokens_cap == 0 {
                 u64::MAX
@@ -417,8 +417,8 @@ impl VaultState {
 
         let mut remaining_weight_to_allocate = total_weight;
 
-        // Loop until all tokens are allocated or there is no more weight to allocate (meaning all reserves are at their cap)
-        // Extra break point to avoid infinite loop if no cap was reached but some token are left
+       
+       
         while remaining_tokens_to_allocate > Fraction::ZERO && remaining_weight_to_allocate > 0 {
             let loop_total_tokens = remaining_tokens_to_allocate;
             let loop_weight = remaining_weight_to_allocate;
@@ -446,7 +446,7 @@ impl VaultState {
                     >= Fraction::from(allocation.token_allocation_cap)
                 {
                     a_cap_was_reached = true;
-                    // Remove the weight from the total
+                   
                     remaining_weight_to_allocate -= reserve_weight;
                     Fraction::from(allocation.token_allocation_cap) - *token_target_allocation
                 } else {
@@ -457,12 +457,12 @@ impl VaultState {
                 *token_target_allocation += reserve_target_capped;
             }
             if !a_cap_was_reached {
-                // No cap was reached on this loop everything allocatable should have been allocated
+               
                 break;
             }
         }
 
-        // Fill the caps
+       
         for (allocation, token_target_allocation) in self
             .vault_allocation_strategy
             .iter_mut()
@@ -471,7 +471,7 @@ impl VaultState {
         {
             allocation.set_token_target_allocation(*token_target_allocation);
 
-            // conservative estimation of the length of the log string
+           
             const LOG_STRING_LENGTH: usize = 30 + 46 + 10 + 10 + 20 + 20 + 50;
             if *token_target_allocation < Fraction::from(allocation.token_allocation_cap) {
                 crate::kmsg_sized!(
@@ -523,11 +523,11 @@ pub struct VaultAllocation {
     pub reserve: Pubkey,
     pub ctoken_vault: Pubkey,
     pub target_allocation_weight: u64,
-    /// Maximum token invested in this reserve
+
     pub token_allocation_cap: u64,
     pub ctoken_vault_bump: u64,
 
-    // all the VaultAllocation config should be above this and use this padding
+   
     pub config_padding: [u64; 127],
 
     pub ctoken_allocation: u64,
@@ -547,7 +547,7 @@ impl VaultAllocation {
     }
 
     pub fn can_be_removed(&self) -> bool {
-        // If 0 target allocation and no c token allocation, remove the reserve
+       
         self.ctoken_allocation == 0 && self.target_allocation_weight == 0
     }
 
@@ -580,11 +580,11 @@ static_assertions::const_assert_eq!(
 static_assertions::const_assert_eq!(0, std::mem::size_of::<ReserveWhitelistEntry>() % 8);
 #[account]
 pub struct ReserveWhitelistEntry {
-    /// The token mint is stored to solve the problem of finding all the whitelisted reserves for a particular token mint:
-    /// when storing the token mint inside the PDA, finding all the whitelisted reserves becomes a `getProgramAccounts` with
-    /// a filter on discriminator + the mint field
-    /// The reserve pubkey, as seed of the reserve whitelist PDA account, it stored so you can link back the PDA to its seeds
-    /// (for instance, in the operation above we easily find the reserve corresponding to the PDA)
+
+
+
+
+
     pub token_mint: Pubkey,
     pub reserve: Pubkey,
     pub whitelist_add_allocation: u8,

@@ -7,21 +7,21 @@ use anchor_lang::{
     },
 };
 
-/// Memory manager for CPI calls
-///
-/// The manager hold memory vectors to hold the accounts and data for CPI calls.
-/// It allows to reuse the memory vectors to avoid reallocating memory for each CPI call.
+
+
+
+
 pub struct CpiMemoryLender<'info> {
-    /// Memory vectors for accounts
+
     accounts: Option<Vec<AccountMeta>>,
-    /// Memory vectors for data
+
     data: Option<Vec<u8>>,
-    /// Account infos
+
     accounts_infos: Vec<AccountInfo<'info>>,
 }
 
 impl<'info> CpiMemoryLender<'info> {
-    /// Create a new memory manager
+
     pub fn new(
         accounts_infos: Vec<AccountInfo<'info>>,
         max_accounts: usize,
@@ -34,7 +34,7 @@ impl<'info> CpiMemoryLender<'info> {
         }
     }
 
-    /// Build a memory manager from all the accounts received in an instruction
+
     pub fn build_cpi_memory_lender(
         mut ctx_accounts: Vec<AccountInfo<'info>>,
         remaining_accounts: &[AccountInfo<'info>],
@@ -43,7 +43,7 @@ impl<'info> CpiMemoryLender<'info> {
         CpiMemoryLender::new(ctx_accounts, 64, 128)
     }
 
-    /// Create an instruction
+
     fn ix(
         &mut self,
         program_id: &Pubkey,
@@ -63,7 +63,7 @@ impl<'info> CpiMemoryLender<'info> {
         }
     }
 
-    /// Return the accounts and data vectors
+
     fn del_ix(&mut self, ix: Instruction) {
         let Instruction {
             program_id: _,
@@ -97,26 +97,26 @@ impl<'info> CpiMemoryLender<'info> {
     }
 }
 
-/// Mimics the original [solana_program::program::invoke_signed()] with one important distinction:
-/// instead of borrowing an [Instruction] instance, it consumes one and then returns the equivalent
-/// one (alongside the original result).
-///
-/// # Why?
-///
-/// In a Rust-native setting (non-SBF) - it changes nothing (and is only mildly cumbersome).
-///
-/// However, in an SBF setting, it allows us to bypass the memory inefficiency living deep within
-/// the `solana-program` library, looking like:
-///
-/// `let instruction = StableInstruction::from(instruction.clone());`
-///
-/// The `.clone()` above destroys all our efforts of avoiding heap allocation (both for the
-/// instruction data *and* accounts).
-///
-/// # How?
-///
-/// The implementation below is 90% of [solana_program::program::invoke_signed_unchecked()], with
-/// removed `.clone()` an added "steal back the `Vec`s" logic at the end.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 fn invoke_signed_and_recover_ix(
     instruction: Instruction,
     account_infos: &[AccountInfo],
@@ -125,7 +125,7 @@ fn invoke_signed_and_recover_ix(
     #[cfg(target_os = "solana")]
     {
         let stable_instruction =
-            solana_program::stable_layout::stable_instruction::StableInstruction::from(instruction); // Our change: the original does `instruction.clone()`
+            solana_program::stable_layout::stable_instruction::StableInstruction::from(instruction);
         let numeric_result = unsafe {
             solana_program::syscalls::sol_invoke_signed_rust(
                 &stable_instruction as *const _ as *const u8,
@@ -140,19 +140,19 @@ fn invoke_signed_and_recover_ix(
             numeric_error => Err(ProgramError::from(numeric_error)),
         };
 
-        // Our change: we recover the `Instruction` instance from the parts of `StableInstruction`.
+       
         let instruction = Instruction {
             program_id: stable_instruction.program_id,
-            accounts: Vec::from(stable_instruction.accounts), // This is not copying; this is actually a custom `From<StableVec>`...
-            data: Vec::from(stable_instruction.data), // ... which steals back the pointer, like `Vec::from_raw_parts()`.
+            accounts: Vec::from(stable_instruction.accounts),
+            data: Vec::from(stable_instruction.data),
         };
-        (result, instruction) // Our change: we have to return this `Instruction` (since the original was only borrowing, and we are consuming)
+        (result, instruction)
     }
 
     #[cfg(not(target_os = "solana"))]
     {
         let result =
             solana_program::program::invoke_signed(&instruction, account_infos, signers_seeds);
-        (result, instruction) // Our change: the non-SBF variant is exactly the same, except we have to return the consumed instruction
+        (result, instruction)
     }
 }

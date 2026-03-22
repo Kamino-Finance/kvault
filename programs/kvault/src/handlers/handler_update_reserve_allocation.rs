@@ -11,7 +11,7 @@ use crate::{
     xmsg, KaminoVaultError, ReserveWhitelistEntry, VaultState,
 };
 
-/// Update the allocation of a reserve; vault admin can insert a new reserve or update the allocation of an existing reserve, but the allocation admin can only update the allocation of existing reserves.
+
 pub fn process(
     ctx: Context<UpdateReserveAllocation>,
     target_allocation_weight: u64,
@@ -22,7 +22,7 @@ pub fn process(
 
     let reserve_key = ctx.accounts.reserve.key();
     let idx = vault.get_reserve_idx_in_allocation(&reserve_key);
-    // if the reserve is not already in allocation require the signer to be admin, otherwise the the allocation admin can also update the allocation
+   
     let is_vault_admin = ctx.accounts.signer.key() == vault.vault_admin_authority;
     let is_allocation_admin = ctx.accounts.signer.key() == vault.allocation_admin;
     match idx {

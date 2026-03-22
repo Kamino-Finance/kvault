@@ -24,14 +24,14 @@ pub fn process<'info>(
     let is_vault_admin = ctx.accounts.signer.key() == vault.vault_admin_authority;
     check_if_signer_allowed_to_update_vault_config(&entry, data, is_global_admin, is_vault_admin)?;
 
-    // CPI memory allocation
+   
     let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender(
         ctx.accounts.to_account_infos(),
         ctx.remaining_accounts,
     );
     let reserves_count = vault.get_reserves_count();
     {
-        // Refresh all reserves
+       
         klend_operations::cpi_refresh_reserves(
             &mut cpi_mem,
             ctx.remaining_accounts.iter().take(reserves_count),
@@ -46,7 +46,7 @@ pub fn process<'info>(
 
     let holdings = holdings(vault, reserves_iter, Clock::get()?.slot)?;
     msg!("holdings {:?}", holdings);
-    // charge fees because after this the fee structure can be different
+   
     vault_operations::charge_fees(
         vault,
         &holdings.invested,

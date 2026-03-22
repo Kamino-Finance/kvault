@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-// Events
+
 #[event]
 pub struct DepositUserAtaBalanceEvent {
     pub user_ata_balance: u64,

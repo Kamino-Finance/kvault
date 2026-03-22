@@ -39,7 +39,7 @@ pub fn process(ctx: Context<InitVault>) -> Result<()> {
         .iter()
         .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
-    // deposit INITIAL_DEPOSIT_AMOUNT to set the share price and avoid price inflation of initial shares
+   
     let DepositEffects {
         shares_to_mint,
         token_to_deposit,
@@ -59,7 +59,7 @@ pub fn process(ctx: Context<InitVault>) -> Result<()> {
         crank_funds_to_deposit
     );
 
-    // Deposit from admin token
+   
     token_ops::tokens::transfer_to_vault(
         &UserTransferAccounts {
             token_program: ctx.accounts.token_program.to_account_info(),

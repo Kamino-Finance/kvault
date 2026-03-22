@@ -192,7 +192,7 @@ pub mod withdraw_utils {
         let global_config = &withdraw_from_available_accounts.global_config.load()?;
         let reserves_count = vault_state.get_reserves_count();
 
-        // Cache some values for withdraw from available
+       
         let token_vault_before = withdraw_from_available_accounts.token_vault.amount;
         let user_ata_before = withdraw_from_available_accounts.user_token_ata.amount;
         let user_shares_before = withdraw_from_available_accounts.user_shares_ata.amount;
@@ -209,7 +209,7 @@ pub mod withdraw_utils {
                 (0, 0)
             };
 
-        // if the user asks to withdraw more shares than they have, withdraw all the shares they have
+       
         let shares_amount = std::cmp::min(shares_amount, user_shares_before);
         let shares_to_withdraw_event = SharesToWithdrawEvent {
             shares_amount,
@@ -279,7 +279,7 @@ pub mod withdraw_utils {
 
         drop(reserve_state_to_withdraw_from);
 
-        // 1. Burn shares
+       
         shares::burn(
             withdraw_from_available_accounts
                 .shares_mint
@@ -294,7 +294,7 @@ pub mod withdraw_utils {
             shares_to_burn,
         )?;
 
-        // 2. Disinvest from reserve to the kvault token vault
+       
         if invested_to_disinvest_ctokens > 0 {
             klend_operations::cpi_redeem_reserve_liquidity_from_withdraw(
                 ctx_withdraw_from_available,
@@ -317,7 +317,7 @@ pub mod withdraw_utils {
             KaminoVaultError::NotEnoughLiquidityDisinvestedToSendToUser
         );
 
-        // 3. Send all the owed tokens to user
+       
         token_ops::tokens::transfer_to_token_account(
             &token_ops::tokens::VaultTransferAccounts {
                 token_program: withdraw_from_available_accounts
@@ -378,7 +378,7 @@ pub mod withdraw_utils {
             (0, 0)
         };
 
-        // Post checks
+       
         post_transfer_withdraw_balance_checks(
             VaultAndUserBalances {
                 reserve_supply_liquidity_balance: reserve_supply_liquidity_before,

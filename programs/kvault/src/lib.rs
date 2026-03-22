@@ -24,7 +24,7 @@ solana_security_txt::security_txt! {
     contacts: "email:security@kamino.finance",
     policy: "https://github.com/Kamino-Finance/audits/blob/master/docs/SECURITY.md",
 
-    // Optional Fields
+   
     preferred_languages: "en",
     auditors: "OtterSec, Offside Labs, Certora, Sec3"
 }
@@ -57,8 +57,8 @@ pub mod kamino_vault {
         ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
         max_amount: u64,
     ) -> Result<()> {
-        // Interface to buy vault tokens, to be improved
-        // later to go through DEXes also
+       
+       
         handler_deposit::process(ctx, max_amount)
     }
 
@@ -73,8 +73,8 @@ pub mod kamino_vault {
         ctx: Context<'_, '_, '_, 'info, Withdraw<'info>>,
         shares_amount: u64,
     ) -> Result<()> {
-        // Interface to sell vault tokens, to be improved
-        // later to go through DEXes also
+       
+       
         handler_withdraw::withdraw(ctx, shares_amount)
     }
 

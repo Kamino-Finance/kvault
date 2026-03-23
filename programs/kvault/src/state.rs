@@ -158,7 +158,7 @@ pub struct VaultState {
     pub allow_allocations_in_whitelisted_reserves_only: u8,
     pub allow_invest_in_whitelisted_reserves_only: u8,
 
-    pub padding_4: [u8; 14],
+    pub padding_2: [u8; 14],
     pub padding_3: [u128; 238],
 }
 

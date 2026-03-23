@@ -1,4 +1,5 @@
 use anchor_lang::{AnchorDeserialize, AnchorSerialize};
+use kamino_lending::fraction::Fraction;
 
 #[derive(Debug)]
 pub struct DepositEffects {
@@ -36,4 +37,12 @@ pub struct InvestEffects {
     pub liquidity_amount: u64,
     pub collateral_amount: u64,
     pub rounding_loss: u64,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct RedeemInKindEffects {
+    pub shares_to_burn: u64,
+    pub ctokens_to_send_to_user: u64,
+    pub actual_liquidity_value: Fraction,
+    pub vault_aum_before: Fraction,
 }

@@ -21,7 +21,7 @@ pub fn process<'info>(
     let reserves_count = vault_state.get_reserves_count();
 
     {
-        // Refresh all reserves
+       
         klend_operations::cpi_refresh_reserves(
             &mut cpi_mem,
             ctx.remaining_accounts.iter().take(reserves_count),

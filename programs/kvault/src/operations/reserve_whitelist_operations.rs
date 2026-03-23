@@ -57,7 +57,7 @@ pub fn check_can_update_allocation_weight(
     allocation_cap: u64,
     reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
 ) -> Result<()> {
-    // Get current allocation weight (0 if reserve is not in allocation)
+   
     let (current_weight, current_cap) = match reserve_idx_in_allocation {
         Some(idx) => (
             vault.vault_allocation_strategy[idx].target_allocation_weight,
@@ -66,7 +66,7 @@ pub fn check_can_update_allocation_weight(
         None => (0, 0),
     };
 
-    // Only check whitelist if target weight or allocation cap increases
+   
     if (target_allocation_weight > current_weight || allocation_cap > current_cap)
         && vault.vault_allows_allocations_in_whitelisted_reserves_only()
     {

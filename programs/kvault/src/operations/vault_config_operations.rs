@@ -45,7 +45,7 @@ pub fn check_if_signer_allowed_to_update_vault_config(
         VaultConfigField::AllowAllocationsInWhitelistedReservesOnly
         | VaultConfigField::AllowInvestInWhitelistedReservesOnly => {
             let value: u8 = BorshDeserialize::try_from_slice(data)?;
-            // Both admins can set to true (1), only global admin can set to false (0)
+           
             if value == 0 {
                 require!(is_global_admin, KaminoVaultError::AdminAuthorityIncorrect);
             } else if value == 1 {
@@ -80,7 +80,7 @@ pub fn check_if_signer_allowed_to_update_vault_config(
         | VaultConfigField::UnallocatedTokensCap
         | VaultConfigField::WithdrawalPenaltyLamports
         | VaultConfigField::WithdrawalPenaltyBps => {
-            // For all other fields, only vault admin is allowed
+           
             require!(is_vault_admin, KaminoVaultError::AdminAuthorityIncorrect);
         }
     }

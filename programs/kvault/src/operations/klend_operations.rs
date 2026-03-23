@@ -30,7 +30,7 @@ where
         .zip(reserve_account_infos_iter)
     {
         account_meta[0] = AccountMeta::new(*reserve_account_info.key, false);
-        // Unchecked is safe because load performs discriminator check.
+       
         let lending_market_pk = FatAccountLoader::<kamino_lending::Reserve>::try_from_unchecked(
             &kamino_lending::id(),
             reserve_account_info,

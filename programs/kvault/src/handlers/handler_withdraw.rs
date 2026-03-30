@@ -84,10 +84,10 @@ pub struct WithdrawFromInvested<'info> {
 
     // Deterministic, PDA
     #[account(mut,
-            seeds = [CTOKEN_VAULT_SEED, vault_state.key().as_ref(), reserve.key().as_ref()],
-            bump,
-            token::token_program = reserve_collateral_token_program,
-        )]
+        seeds = [CTOKEN_VAULT_SEED, vault_state.key().as_ref(), reserve.key().as_ref()],
+        bump,
+        token::token_program = reserve_collateral_token_program,
+    )]
     pub ctoken_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub lending_market: AccountInfo<'info>,
@@ -107,7 +107,6 @@ pub struct WithdrawFromInvested<'info> {
 #[event_cpi]
 #[derive(Accounts)]
 pub struct WithdrawFromAvailable<'info> {
-    #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(mut,

@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use fixed::types::U68F60 as Fraction;
+use kamino_lending::utils::FractionExtra;
 
 use super::effects::{
     InvestEffects, InvestingDirection, WithdrawEffects, WithdrawPendingFeesEffects,
@@ -18,6 +19,51 @@ pub struct VaultBalances {
     pub reserve_supply_liquidity_balance: u64,
     pub vault_token_balance: u64,
     pub vault_ctoken_balance: u64,
+}
+
+pub struct RedeemInKindPostCheckAmounts {
+    pub user_share_balance: u64,
+    pub vault_ctoken_balance: u64,
+    pub user_ctoken_balance: u64,
+    pub vault_aum: Fraction,
+}
+
+pub fn post_redeem_in_kind_checks(
+    amounts_before: &RedeemInKindPostCheckAmounts,
+    amounts_after: &RedeemInKindPostCheckAmounts,
+    ctokens_to_send_to_user: u64,
+    shares_to_burn: u64,
+    actual_liquidity_value: Fraction,
+) -> Result<()> {
+    require_eq!(
+        amounts_before.vault_ctoken_balance - amounts_after.vault_ctoken_balance,
+        ctokens_to_send_to_user,
+        KaminoVaultError::LiquidityToWithdrawDoesNotMatch
+    );
+    require_eq!(
+        amounts_after.user_ctoken_balance - amounts_before.user_ctoken_balance,
+        ctokens_to_send_to_user,
+        KaminoVaultError::UserReceivedAmountDoesNotMatch
+    );
+    require_eq!(
+        amounts_before.user_share_balance - amounts_after.user_share_balance,
+        shares_to_burn,
+        KaminoVaultError::SharesBurnedAmountDoesNotMatch
+    );
+
+   
+    let aum_decrease = amounts_before.vault_aum - amounts_after.vault_aum;
+    require_msg!(
+        aum_decrease <= actual_liquidity_value,
+        KaminoVaultError::AUMDecreasedMoreThanExpected,
+        &format!(
+            "AUM decreased by {} but expected at most {}",
+            aum_decrease.to_display(),
+            actual_liquidity_value.to_display()
+        )
+    );
+
+    Ok(())
 }
 
 pub fn post_transfer_withdraw_balance_checks(

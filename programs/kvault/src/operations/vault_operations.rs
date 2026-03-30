@@ -2,7 +2,7 @@ use core::fmt;
 use std::{fmt::Debug, ops::Mul};
 
 use anchor_lang::{err, prelude::*, require, solana_program::clock::Slot, Result};
-use common::{compute_user_total_received_on_withdraw, update_prev_aum, Holdings, Invested};
+use common::{update_prev_aum, Holdings, Invested};
 use kamino_lending::{
     fraction::Fraction,
     utils::{AnyAccountLoader, FractionExtra},
@@ -12,7 +12,8 @@ use rust_decimal::prelude::ToPrimitive;
 use solana_program::pubkey::Pubkey;
 
 use super::effects::{
-    DepositEffects, InvestEffects, InvestingDirection, WithdrawEffects, WithdrawPendingFeesEffects,
+    DepositEffects, InvestEffects, InvestingDirection, RedeemInKindEffects, WithdrawEffects,
+    WithdrawPendingFeesEffects,
 };
 use crate::{
     kmsg, kmsg_sized,
@@ -108,6 +109,43 @@ where
     })
 }
 
+struct VaultHoldingsAndCurrentAUM {
+    holdings: Holdings,
+    current_vault_aum: Fraction,
+}
+
+
+
+
+
+fn update_vault_fees_and_validate_holdings_aum<'info, T>(
+    vault: &mut VaultState,
+    reserves_iter: impl Iterator<Item = T>,
+    current_timestamp: u64,
+    current_slot: Slot,
+) -> Result<VaultHoldingsAndCurrentAUM>
+where
+    T: AnyAccountLoader<'info, Reserve>,
+{
+   
+    let holdings = holdings(vault, reserves_iter, current_slot)?;
+
+    charge_fees(vault, &holdings.invested, current_timestamp)?;
+
+   
+    let current_vault_aum = vault.compute_aum(&holdings.invested.total)?;
+
+    require!(
+        current_vault_aum > Fraction::ZERO,
+        KaminoVaultError::VaultAUMZero
+    );
+
+    Ok(VaultHoldingsAndCurrentAUM {
+        holdings,
+        current_vault_aum,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 #[inline(never)]
 pub fn withdraw<'info, T>(
@@ -129,49 +167,36 @@ where
         KaminoVaultError::CannotWithdrawZeroShares
     );
 
-   
-    let holdings = holdings(vault, reserves_iter, current_slot)?;
+    let VaultHoldingsAndCurrentAUM {
+        holdings,
+        current_vault_aum,
+    } = update_vault_fees_and_validate_holdings_aum(
+        vault,
+        reserves_iter,
+        current_timestamp,
+        current_slot,
+    )?;
 
-    charge_fees(vault, &holdings.invested, current_timestamp)?;
-
-   
-    let current_vault_aum = vault.compute_aum(&holdings.invested.total)?;
-
-    require!(
-        current_vault_aum > Fraction::ZERO,
-        KaminoVaultError::VaultAUMZero
-    );
-
-   
     let total_shares_supply = vault.shares_issued;
-    let total_for_user: u64 = compute_user_total_received_on_withdraw(
+
+    let total_liquidity_for_user_with_penalty = common::compute_user_total_received_on_withdraw(
         total_shares_supply,
         current_vault_aum,
         number_of_shares,
     );
     require!(
-        total_for_user > 0,
+        total_liquidity_for_user_with_penalty > 0,
         KaminoVaultError::CannotWithdrawZeroLamports
     );
 
-   
-    let withdrawal_penalty_lamports = global_config
-        .withdrawal_penalty_lamports
-        .max(vault.withdrawal_penalty_lamports);
-    let withdrawal_penalty_bps = global_config
-        .withdrawal_penalty_bps
-        .max(vault.withdrawal_penalty_bps);
-
-    let withdrawal_penalty = common::get_withdrawal_penalty(
-        total_for_user,
-        withdrawal_penalty_lamports,
-        withdrawal_penalty_bps,
-    );
+    let withdrawal_penalty =
+        common::get_withdrawal_penalty(vault, global_config, total_liquidity_for_user_with_penalty);
     require!(
-        withdrawal_penalty < total_for_user,
+        withdrawal_penalty < total_liquidity_for_user_with_penalty,
         KaminoVaultError::WithdrawAmountLessThanWithdrawalPenalty
     );
-    let total_for_user = total_for_user - withdrawal_penalty;
+
+    let total_for_user = total_liquidity_for_user_with_penalty - withdrawal_penalty;
 
    
    
@@ -567,6 +592,159 @@ where
     })
 }
 
+pub struct RedeemInKindParams<'a, T> {
+    pub vault_state: &'a mut VaultState,
+    pub global_config: &'a GlobalConfig,
+    pub reserve_address: &'a Pubkey,
+    pub reserve_state: &'a Reserve,
+    pub reserves_iter: T,
+    pub shares_amount: u64,
+    pub clock: &'a Clock,
+}
+
+#[inline(never)]
+pub fn redeem_in_kind<'info, T>(
+    RedeemInKindParams {
+        vault_state,
+        global_config,
+        reserve_address,
+        reserve_state,
+        reserves_iter,
+        shares_amount,
+        clock,
+    }: RedeemInKindParams<'_, T>,
+) -> Result<RedeemInKindEffects>
+where
+    T: Iterator,
+    T::Item: AnyAccountLoader<'info, Reserve>,
+{
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+    require!(
+        shares_amount > 0,
+        KaminoVaultError::CannotWithdrawZeroShares
+    );
+
+    let reserve_allocation = vault_state.allocation_for_reserve(reserve_address)?;
+    let reserve_ctokens_owned = reserve_allocation.ctoken_allocation;
+
+    let VaultHoldingsAndCurrentAUM {
+        holdings: _,
+        current_vault_aum,
+    } = update_vault_fees_and_validate_holdings_aum(
+        vault_state,
+        reserves_iter,
+        clock.unix_timestamp.try_into().unwrap(),
+        clock.slot,
+    )?;
+
+    let total_shares_supply = vault_state.shares_issued;
+
+    let total_liquidity_for_user_with_penalty_f =
+        common::compute_user_total_received_on_withdraw_fraction(
+            total_shares_supply,
+            current_vault_aum,
+            shares_amount,
+        );
+    require!(
+        total_liquidity_for_user_with_penalty_f > Fraction::ZERO,
+        KaminoVaultError::CannotWithdrawZeroLamports
+    );
+
+    let withdrawal_penalty_f = common::get_withdrawal_penalty_for_fraction_amount_inclusive(
+        vault_state,
+        global_config,
+        total_liquidity_for_user_with_penalty_f,
+    );
+    require!(
+        withdrawal_penalty_f < total_liquidity_for_user_with_penalty_f,
+        KaminoVaultError::WithdrawAmountLessThanWithdrawalPenalty
+    );
+
+    let total_liquidity_for_user = total_liquidity_for_user_with_penalty_f - withdrawal_penalty_f;
+
+   
+    let exchange_rate = reserve_state.collateral_exchange_rate();
+
+   
+   
+    let ctokens_to_send_to_user = exchange_rate
+        .fraction_liquidity_to_collateral(total_liquidity_for_user)
+        .to_floor::<u64>()
+        .min(reserve_ctokens_owned);
+
+    if ctokens_to_send_to_user == 0 {
+        return err!(KaminoVaultError::WithdrawResultsInZeroShares);
+    }
+
+   
+   
+   
+    let actual_liquidity_value_f = common::exchange_rate_fraction_collateral_to_liquidity_ceil(
+        reserve_state,
+        Fraction::from_num(ctokens_to_send_to_user),
+    );
+
+   
+   
+    let withdrawal_penalty_f = common::get_withdrawal_penalty_for_fraction_amount_exclusive(
+        vault_state,
+        global_config,
+        actual_liquidity_value_f,
+    );
+    let theoretical_amount_to_send_to_user_f = actual_liquidity_value_f + withdrawal_penalty_f;
+
+    let shares_to_burn = common::calculate_shares_to_burn(
+        theoretical_amount_to_send_to_user_f,
+        vault_state.shares_issued,
+        current_vault_aum,
+        shares_amount,
+    );
+
+    if shares_to_burn == 0 {
+        return err!(KaminoVaultError::WithdrawResultsInZeroShares);
+    }
+
+    kmsg!(
+        "Total liquidity for user {}",
+        actual_liquidity_value_f.to_display()
+    );
+    kmsg!("CTokens to send to user {}", ctokens_to_send_to_user);
+    kmsg!("Shares to burn {}", shares_to_burn);
+    kmsg!("Withdrawal penalty {}", withdrawal_penalty_f.to_display());
+
+    if actual_liquidity_value_f.to_floor::<u64>() <= vault_state.min_withdraw_amount {
+        return err!(KaminoVaultError::WithdrawAmountBelowMinimum);
+    }
+
+   
+    common::burn_shares(vault_state, shares_to_burn);
+    common::withdraw_from_vault_allocation(vault_state, ctokens_to_send_to_user, reserve_address)?;
+
+   
+    let net_amount_withdrawn_from_vault = actual_liquidity_value_f;
+    common::update_prev_aum(
+        vault_state,
+        current_vault_aum - net_amount_withdrawn_from_vault,
+    );
+
+    Ok(RedeemInKindEffects {
+        shares_to_burn,
+        ctokens_to_send_to_user,
+        actual_liquidity_value: actual_liquidity_value_f,
+        vault_aum_before: current_vault_aum,
+    })
+}
+
 pub fn charge_fees(vault: &mut VaultState, invested: &Invested, timestamp: u64) -> Result<()> {
     if vault.last_fee_charge_timestamp == 0 {
         vault.last_fee_charge_timestamp = timestamp;
@@ -664,6 +842,18 @@ pub mod common {
             .full_mul_int_ratio(user_token_amount, holdings_aum.to_ceil::<u64>());
 
         Ok(shares_to_mint.to_floor())
+    }
+
+
+
+    pub fn exchange_rate_fraction_collateral_to_liquidity_ceil(
+        reserve: &Reserve,
+        collateral_amount_f: Fraction,
+    ) -> Fraction {
+        let liquidity_total_f = Fraction::from(reserve.liquidity.total_supply());
+        let collateral_supply_f = Fraction::from(reserve.collateral.mint_total_supply);
+
+        full_mul_fraction_ratio_ceil(liquidity_total_f, collateral_amount_f, collateral_supply_f)
     }
 
     pub fn amounts_invested<'info, T>(
@@ -771,37 +961,116 @@ pub mod common {
         vault.token_available -= amount;
     }
 
-    pub fn compute_user_total_received_on_withdraw(
+    pub fn compute_user_total_received_on_withdraw_fraction(
         shares_issued: u64,
         vault_total_holdings: Fraction,
         shares_to_withdraw: u64,
-    ) -> u64 {
-        let total_for_user: u64 = if shares_issued == shares_to_withdraw {
-            vault_total_holdings.to_floor()
-        } else {
+    ) -> Fraction {
+        let total_for_user = if shares_issued == shares_to_withdraw {
             vault_total_holdings
-                .full_mul_int_ratio(shares_to_withdraw, shares_issued)
-                .to_floor()
+        } else {
+            vault_total_holdings.full_mul_int_ratio(shares_to_withdraw, shares_issued)
         };
         kmsg_sized!(
             150,
             "Total for user {} total_sum {}",
-            total_for_user,
+            total_for_user.to_display(),
             vault_total_holdings.to_display()
         );
 
         total_for_user
     }
 
-    pub fn get_withdrawal_penalty(
-        total_amount_withdrawn: u64,
-        withdrawal_penalty_lamports: u64,
-        withdrawal_penalty_bps: u64,
+    pub fn compute_user_total_received_on_withdraw(
+        shares_issued: u64,
+        vault_total_holdings: Fraction,
+        shares_to_withdraw: u64,
     ) -> u64 {
-        let withdrawal_penalty_from_bps = Fraction::from(total_amount_withdrawn)
-            .full_mul_int_ratio(withdrawal_penalty_bps, FULL_BPS)
-            .to_ceil::<u64>();
-        withdrawal_penalty_from_bps.max(withdrawal_penalty_lamports)
+        let total_for_user = compute_user_total_received_on_withdraw_fraction(
+            shares_issued,
+            vault_total_holdings,
+            shares_to_withdraw,
+        )
+        .to_floor();
+        kmsg_sized!(150, "Total for user {} (floored)", total_for_user);
+
+        total_for_user
+    }
+
+    pub struct WithdrawalPenaltyParams {
+        pub penalty_lamports: u64,
+        pub penalty_bps: u64,
+    }
+
+
+
+    pub fn get_withdrawal_penalty_for_fraction_amount_inclusive(
+        vault: &VaultState,
+        global_config: &GlobalConfig,
+        total_amount_withdrawn: Fraction,
+    ) -> Fraction {
+        let WithdrawalPenaltyParams {
+            penalty_lamports,
+            penalty_bps,
+        } = calculate_withdrawal_penalty_params(global_config, vault);
+        let withdrawal_penalty_from_bps =
+            total_amount_withdrawn.full_mul_int_ratio(penalty_bps, FULL_BPS);
+        withdrawal_penalty_from_bps.max(Fraction::from(penalty_lamports))
+    }
+
+    pub fn get_withdrawal_penalty(
+        vault: &VaultState,
+        global_config: &GlobalConfig,
+        total_amount_withdrawn: u64,
+    ) -> u64 {
+        get_withdrawal_penalty_for_fraction_amount_inclusive(
+            vault,
+            global_config,
+            Fraction::from(total_amount_withdrawn),
+        )
+        .to_ceil::<u64>()
+    }
+
+
+
+
+
+
+
+
+
+    pub fn get_withdrawal_penalty_for_fraction_amount_exclusive(
+        vault: &VaultState,
+        global_config: &GlobalConfig,
+        total_amount_withdrawn_without_penalty: Fraction,
+    ) -> Fraction {
+        let WithdrawalPenaltyParams {
+            penalty_lamports,
+            penalty_bps,
+        } = calculate_withdrawal_penalty_params(global_config, vault);
+        let f = Fraction::from_bps(penalty_bps);
+        let withdrawal_penalty_from_bps =
+            total_amount_withdrawn_without_penalty * f / (Fraction::ONE - f);
+        withdrawal_penalty_from_bps.max(Fraction::from(penalty_lamports))
+    }
+
+
+
+    pub fn calculate_withdrawal_penalty_params(
+        global_config: &GlobalConfig,
+        vault: &VaultState,
+    ) -> WithdrawalPenaltyParams {
+        let penalty_lamports = global_config
+            .withdrawal_penalty_lamports
+            .max(vault.withdrawal_penalty_lamports);
+        let penalty_bps = global_config
+            .withdrawal_penalty_bps
+            .max(vault.withdrawal_penalty_bps);
+
+        WithdrawalPenaltyParams {
+            penalty_lamports,
+            penalty_bps,
+        }
     }
 
     pub fn compute_amount_to_deposit_from_shares_to_mint(

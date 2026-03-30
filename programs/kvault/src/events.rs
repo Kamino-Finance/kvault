@@ -26,3 +26,9 @@ pub struct WithdrawResultEvent {
     pub invested_to_disinvest_ctokens: u64,
     pub invested_liquidity_to_send_to_user: u64,
 }
+
+#[event]
+pub struct RedeemInKindResultEvent {
+    pub shares_to_burn: u64,
+    pub ctokens_to_send_to_user: u64,
+}

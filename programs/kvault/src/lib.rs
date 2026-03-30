@@ -157,6 +157,13 @@ pub mod kamino_vault {
     ) -> Result<()> {
         handler_add_update_whitelisted_reserve::process(ctx, update)
     }
+
+    pub fn redeem_in_kind<'info>(
+        ctx: Context<'_, '_, '_, 'info, RedeemInKind<'info>>,
+        shares_amount: u64,
+    ) -> Result<()> {
+        handler_redeem_in_kind::redeem_in_kind(ctx, shares_amount)
+    }
 }
 
 #[error_code]
@@ -330,6 +337,9 @@ pub enum KaminoVaultError {
 
     #[msg("Invalid bool-like value passed in (should be 0 or 1)")]
     InvalidBoolLikeValue,
+
+    #[msg("AUM decreased more than expected during redeem in kind")]
+    AUMDecreasedMoreThanExpected,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

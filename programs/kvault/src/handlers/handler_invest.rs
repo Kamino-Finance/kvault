@@ -69,6 +69,8 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
         .take(reserves_count)
         .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
+    vault_operations::refresh_rewards(vault_state, current_timestamp)?;
+
     let initial_holdings_total =
         holdings(vault_state, reserves_iter.clone(), current_slot)?.total_sum;
 

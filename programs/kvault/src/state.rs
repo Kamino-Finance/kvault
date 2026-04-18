@@ -159,7 +159,10 @@ pub struct VaultState {
     pub allow_invest_in_whitelisted_reserves_only: u8,
 
     pub padding_2: [u8; 14],
-    pub padding_3: [u128; 238],
+
+    pub reward_info: VaultRewardInfo,
+
+    pub padding_3: [u128; 232],
 }
 
 impl Default for VaultState {
@@ -611,5 +614,25 @@ impl Default for ReserveWhitelistEntry {
             whitelist_invest: 0,
             padding: [0; 62],
         }
+    }
+}
+
+#[zero_copy]
+#[derive(AnchorDeserialize, Debug, PartialEq, Eq, Default)]
+pub struct VaultRewardInfo {
+    pub reward_per_second: u64,
+    pub last_issuance_ts: u64,
+
+
+    pub rewards_available: u64,
+
+    pub cumulative_rewards_distributed_analytics: u64,
+
+    pub padding: [u64; 8],
+}
+
+impl VaultRewardInfo {
+    pub fn has_active_rewards(&self) -> bool {
+        self.reward_per_second > 0 && self.rewards_available > 0
     }
 }

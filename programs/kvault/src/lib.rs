@@ -158,6 +158,14 @@ pub mod kamino_vault {
         handler_add_update_whitelisted_reserve::process(ctx, update)
     }
 
+    pub fn topup_rewards(ctx: Context<TopupRewards>, amount: u64) -> Result<()> {
+        handler_topup_rewards::process(ctx, amount)
+    }
+
+    pub fn withdraw_rewards(ctx: Context<WithdrawRewards>, amount: u64) -> Result<()> {
+        handler_withdraw_rewards::process(ctx, amount)
+    }
+
     pub fn redeem_in_kind<'info>(
         ctx: Context<'_, '_, '_, 'info, RedeemInKind<'info>>,
         shares_amount: u64,
@@ -337,6 +345,21 @@ pub enum KaminoVaultError {
 
     #[msg("Invalid bool-like value passed in (should be 0 or 1)")]
     InvalidBoolLikeValue,
+
+    #[msg("Reward topup amount is zero")]
+    RewardTopupAmountZero,
+
+    #[msg("Reward topup is not as expected after transfer")]
+    RewardTopupAmountNotExpected,
+
+    #[msg("Reward withdraw amount is zero")]
+    RewardWithdrawAmountZero,
+
+    #[msg("Reward withdraw is not as expected after transfer")]
+    RewardWithdrawAmountNotExpected,
+
+    #[msg("Rewards are stale - must be refreshed before updating fees")]
+    RewardsStaleForFeeUpdate,
 
     #[msg("AUM decreased more than expected during redeem in kind")]
     AUMDecreasedMoreThanExpected,

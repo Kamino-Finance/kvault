@@ -33,6 +33,7 @@ pub enum VaultConfigField {
     FirstLossCapitalFarm,
     AllowAllocationsInWhitelistedReservesOnly,
     AllowInvestInWhitelistedReservesOnly,
+    RewardPerSecond,
 }
 
 pub fn check_if_signer_allowed_to_update_vault_config(
@@ -79,7 +80,8 @@ pub fn check_if_signer_allowed_to_update_vault_config(
         | VaultConfigField::UnallocatedWeight
         | VaultConfigField::UnallocatedTokensCap
         | VaultConfigField::WithdrawalPenaltyLamports
-        | VaultConfigField::WithdrawalPenaltyBps => {
+        | VaultConfigField::WithdrawalPenaltyBps
+        | VaultConfigField::RewardPerSecond => {
            
             require!(is_vault_admin, KaminoVaultError::AdminAuthorityIncorrect);
         }
@@ -250,6 +252,16 @@ pub fn update_vault_config(
             );
             msg!("New value is {:?}", value);
             vault.allow_invest_in_whitelisted_reserves_only = value;
+        }
+        VaultConfigField::RewardPerSecond => {
+            let new_rps: u64 = BorshDeserialize::try_from_slice(data)?;
+            let current_ts: u64 = Clock::get()?.unix_timestamp.try_into().unwrap();
+
+            msg!("Prv value is {:?}", vault.reward_info.reward_per_second);
+            msg!("New value is {:?}", new_rps);
+
+            vault.reward_info.reward_per_second = new_rps;
+            vault.reward_info.last_issuance_ts = current_ts;
         }
     }
 

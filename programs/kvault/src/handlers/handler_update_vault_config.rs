@@ -44,14 +44,14 @@ pub fn process<'info>(
         .take(reserves_count)
         .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
+    let current_ts: u64 = Clock::get()?.unix_timestamp.try_into().unwrap();
+   
+    vault_operations::refresh_rewards(vault, current_ts)?;
+
     let holdings = holdings(vault, reserves_iter, Clock::get()?.slot)?;
     msg!("holdings {:?}", holdings);
    
-    vault_operations::charge_fees(
-        vault,
-        &holdings.invested,
-        Clock::get()?.unix_timestamp.try_into().unwrap(),
-    )?;
+    vault_operations::charge_fees(vault, &holdings.invested, current_ts)?;
 
     vault_config_operations::update_vault_config(vault, entry, data)?;
 

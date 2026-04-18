@@ -54,6 +54,8 @@ pub fn deposit<'info, T>(
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
+    refresh_rewards(vault, current_timestamp)?;
+
     let num_reserve: u64 = vault
         .get_reserves_with_allocation_count()
         .try_into()
@@ -166,6 +168,8 @@ where
         number_of_shares > 0,
         KaminoVaultError::CannotWithdrawZeroShares
     );
+
+    refresh_rewards(vault, current_timestamp)?;
 
     let VaultHoldingsAndCurrentAUM {
         holdings,
@@ -342,6 +346,8 @@ pub fn withdraw_pending_fees<'info, T>(
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
+    refresh_rewards(vault, current_timestamp)?;
+
    
     let Holdings {
         invested,
@@ -425,6 +431,7 @@ pub fn give_up_pending_fee<'info, T>(
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
+    refresh_rewards(vault, current_timestamp)?;
     let holdings = holdings(vault, reserves_iter, current_slot)?;
     msg!("holdings {:?}", holdings);
     let invested = &holdings.invested;
@@ -634,6 +641,9 @@ where
         KaminoVaultError::CannotWithdrawZeroShares
     );
 
+    let current_timestamp: u64 = clock.unix_timestamp.try_into().unwrap();
+    refresh_rewards(vault_state, current_timestamp)?;
+
     let reserve_allocation = vault_state.allocation_for_reserve(reserve_address)?;
     let reserve_ctokens_owned = reserve_allocation.ctoken_allocation;
 
@@ -643,7 +653,7 @@ where
     } = update_vault_fees_and_validate_holdings_aum(
         vault_state,
         reserves_iter,
-        clock.unix_timestamp.try_into().unwrap(),
+        current_timestamp,
         clock.slot,
     )?;
 
@@ -811,6 +821,75 @@ pub fn charge_fees(vault: &mut VaultState, invested: &Invested, timestamp: u64) 
     vault.last_fee_charge_timestamp = timestamp;
 
     Ok(())
+}
+
+
+
+
+pub fn refresh_rewards(vault: &mut VaultState, current_timestamp: u64) -> Result<u64> {
+    let reward_info = &mut vault.reward_info;
+
+    if !reward_info.has_active_rewards() {
+        return Ok(0);
+    }
+
+    if reward_info.last_issuance_ts == 0 {
+        reward_info.last_issuance_ts = current_timestamp;
+        return Ok(0);
+    }
+
+    let seconds_passed = current_timestamp.saturating_sub(reward_info.last_issuance_ts);
+    if seconds_passed == 0 {
+        return Ok(0);
+    }
+
+    let pending_rewards = reward_info.reward_per_second.saturating_mul(seconds_passed);
+
+    let rewards_to_distribute = pending_rewards.min(reward_info.rewards_available);
+
+    if rewards_to_distribute > 0 {
+        vault.token_available += rewards_to_distribute;
+
+        reward_info.rewards_available -= rewards_to_distribute;
+
+        reward_info.cumulative_rewards_distributed_analytics += rewards_to_distribute;
+
+        kmsg!(
+            "Rewards distributed={}, rps={}, seconds_passed={}",
+            rewards_to_distribute,
+            reward_info.reward_per_second,
+            seconds_passed
+        );
+    }
+
+    reward_info.last_issuance_ts = current_timestamp;
+
+    Ok(rewards_to_distribute)
+}
+
+pub fn topup_rewards(vault: &mut VaultState, amount: u64, current_ts: u64) -> Result<()> {
+    require!(amount > 0, KaminoVaultError::RewardTopupAmountZero);
+
+    refresh_rewards(vault, current_ts)?;
+
+    vault.reward_info.rewards_available += amount;
+
+    if vault.reward_info.last_issuance_ts == 0 && vault.reward_info.has_active_rewards() {
+        vault.reward_info.last_issuance_ts = current_ts;
+    }
+
+    Ok(())
+}
+
+pub fn withdraw_rewards(vault: &mut VaultState, amount: u64, current_ts: u64) -> Result<u64> {
+    require!(amount > 0, KaminoVaultError::RewardWithdrawAmountZero);
+
+    refresh_rewards(vault, current_ts)?;
+
+    let withdraw_amount = std::cmp::min(amount, vault.reward_info.rewards_available);
+    vault.reward_info.rewards_available -= withdraw_amount;
+
+    Ok(withdraw_amount)
 }
 
 pub mod common {

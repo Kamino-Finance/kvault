@@ -1,6 +1,6 @@
 [package]
 name = "kamino_vault"
-version = "2.1.0"
+version = "2.1.1"
 description = "Kamino lending vault Solana program"
 edition = "2021"
 license = "BUSL-1.1"

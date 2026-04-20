@@ -346,6 +346,9 @@ pub enum KaminoVaultError {
     #[msg("Invalid bool-like value passed in (should be 0 or 1)")]
     InvalidBoolLikeValue,
 
+    #[msg("AUM decreased more than expected during redeem in kind")]
+    AUMDecreasedMoreThanExpected,
+
     #[msg("Reward topup amount is zero")]
     RewardTopupAmountZero,
 
@@ -359,10 +362,7 @@ pub enum KaminoVaultError {
     RewardWithdrawAmountNotExpected,
 
     #[msg("Rewards are stale - must be refreshed before updating fees")]
-    RewardsStaleForFeeUpdate,
-
-    #[msg("AUM decreased more than expected during redeem in kind")]
-    AUMDecreasedMoreThanExpected,
+    RewardsStaleForFeeUpdate
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

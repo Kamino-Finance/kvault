@@ -874,7 +874,7 @@ pub fn topup_rewards(vault: &mut VaultState, amount: u64, current_ts: u64) -> Re
 
     vault.reward_info.rewards_available += amount;
 
-    if vault.reward_info.last_issuance_ts == 0 && vault.reward_info.has_active_rewards() {
+    if vault.reward_info.has_active_rewards() {
         vault.reward_info.last_issuance_ts = current_ts;
     }
 

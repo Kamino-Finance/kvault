@@ -362,7 +362,7 @@ pub enum KaminoVaultError {
     RewardWithdrawAmountNotExpected,
 
     #[msg("Rewards are stale - must be refreshed before updating fees")]
-    RewardsStaleForFeeUpdate
+    RewardsStaleForFeeUpdate,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

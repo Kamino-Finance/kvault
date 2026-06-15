@@ -530,7 +530,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive 0.10.3",
- "hashbrown 0.13.2",
+ "hashbrown 0.12.3",
 ]
 
 [[package]]
@@ -2232,7 +2232,7 @@ checksum = "98a01dab6acf992653be49205bdd549f32f17cb2803e8eacf1560bf97259aae8"
 [[package]]
 name = "sbod-itf"
 version = "0.1.0"
-source = "git+https://github.com/Kamino-Finance/scope.git#e21a5817351d878e0a761e9e820b93690087d81b"
+source = "git+https://github.com/Kamino-Finance/scope.git#2fb674083e98ced60fc4df95814358926f28ea46"
 dependencies = [
  "anchor-lang",
  "bytemuck",
@@ -2256,7 +2256,7 @@ dependencies = [
 [[package]]
 name = "scope-types"
 version = "1.0.0"
-source = "git+https://github.com/Kamino-Finance/scope.git#e21a5817351d878e0a761e9e820b93690087d81b"
+source = "git+https://github.com/Kamino-Finance/scope.git#2fb674083e98ced60fc4df95814358926f28ea46"
 dependencies = [
  "anchor-lang",
  "bytemuck",

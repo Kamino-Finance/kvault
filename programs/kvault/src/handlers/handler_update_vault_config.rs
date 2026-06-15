@@ -1,9 +1,7 @@
 use anchor_lang::prelude::*;
-use kamino_lending::{utils::FatAccountLoader, Reserve};
 
 use crate::{
     operations::{
-        klend_operations,
         vault_config_operations::{
             self, check_if_signer_allowed_to_update_vault_config, VaultConfigField,
         },
@@ -29,26 +27,19 @@ pub fn process<'info>(
         ctx.accounts.to_account_infos(),
         ctx.remaining_accounts,
     );
-    let reserves_count = vault.get_reserves_count();
-    {
-       
-        klend_operations::cpi_refresh_reserves(
-            &mut cpi_mem,
-            ctx.remaining_accounts.iter().take(reserves_count),
-            reserves_count,
-        )?;
-    }
-    let reserves_iter = ctx
-        .remaining_accounts
-        .iter()
-        .take(reserves_count)
-        .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
+    let clock = Clock::get()?;
 
-    let current_ts: u64 = Clock::get()?.unix_timestamp.try_into().unwrap();
+    let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
+        &mut cpi_mem,
+        vault,
+        ctx.remaining_accounts,
+        clock.slot,
+    )?;
+
+    let current_ts: u64 = clock.unix_timestamp.try_into().unwrap();
    
     vault_operations::refresh_rewards(vault, current_ts)?;
-
-    let holdings = holdings(vault, reserves_iter, Clock::get()?.slot)?;
+    let holdings = holdings(vault, reserves_iter)?;
     msg!("holdings {:?}", holdings);
    
     vault_operations::charge_fees(vault, &holdings.invested, current_ts)?;

@@ -158,8 +158,9 @@ pub struct VaultState {
     pub allow_allocations_in_whitelisted_reserves_only: u8,
     pub allow_invest_in_whitelisted_reserves_only: u8,
 
-    pub padding_2: [u8; 14],
+    pub padding_2: [u8; 6],
 
+    pub deposit_cap: u64,
     pub reward_info: VaultRewardInfo,
 
     pub padding_3: [u128; 232],
@@ -231,10 +232,24 @@ impl VaultState {
     }
 
     pub fn vault_allows_allocations_in_whitelisted_reserves_only(&self) -> bool {
+        if self.allow_allocations_in_whitelisted_reserves_only > 1 {
+           
+            panic!(
+                "Invalid {} value for allow_allocations_in_whitelisted_reserves_only, it should be 0 or 1",
+                self.allow_allocations_in_whitelisted_reserves_only
+            );
+        }
         self.allow_allocations_in_whitelisted_reserves_only == 1
     }
 
     pub fn vault_allows_invest_in_whitelisted_reserves_only(&self) -> bool {
+        if self.allow_invest_in_whitelisted_reserves_only > 1 {
+           
+            panic!(
+                "Invalid {} value for allow_invest_in_whitelisted_reserves_only, it should be 0 or 1",
+                self.allow_invest_in_whitelisted_reserves_only
+            );
+        }
         self.allow_invest_in_whitelisted_reserves_only == 1
     }
 
@@ -597,10 +612,24 @@ pub struct ReserveWhitelistEntry {
 
 impl ReserveWhitelistEntry {
     pub fn is_add_allocation_whitelisted(&self) -> bool {
+        if self.whitelist_add_allocation > 1 {
+           
+            panic!(
+                "Invalid {} value for whitelist_add_allocation, it should be 0 or 1",
+                self.whitelist_add_allocation
+            );
+        }
         self.whitelist_add_allocation == 1
     }
 
     pub fn is_invest_whitelisted(&self) -> bool {
+        if self.whitelist_invest > 1 {
+           
+            panic!(
+                "Invalid {} value for whitelist_invest, it should be 0 or 1",
+                self.whitelist_invest
+            );
+        }
         self.whitelist_invest == 1
     }
 }

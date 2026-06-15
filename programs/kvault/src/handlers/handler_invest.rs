@@ -8,10 +8,9 @@ use anchor_spl::{
     token_interface::{self, accessor::amount, Mint, TokenAccount, TokenInterface},
 };
 use kamino_lending::{
-    utils::{AnyAccountLoader, FatAccountLoader, Fraction},
+    utils::{AnyAccountLoader, Fraction},
     Reserve,
 };
-use solana_program::clock::Slot;
 
 use crate::{
     kmsg,
@@ -36,17 +35,17 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
 
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
     let bump = vault_state.base_vault_authority_bump;
-
     let reserves_count = vault_state.get_reserves_count();
+    let clock = Clock::get()?;
+    let current_slot = clock.slot;
+    let current_timestamp: u64 = clock.unix_timestamp.try_into().unwrap();
 
-    {
-       
-        klend_operations::cpi_refresh_reserves(
-            &mut cpi_mem,
-            ctx.remaining_accounts.iter().take(reserves_count),
-            reserves_count,
-        )?;
-    }
+    let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
+        &mut cpi_mem,
+        vault_state,
+        ctx.remaining_accounts,
+        current_slot,
+    )?;
 
     let reserve = ctx.accounts.reserve.load()?;
     let reserve_address = ctx.accounts.reserve.to_account_info().key;
@@ -56,23 +55,8 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
     let reserve_liquidity_before =
         amount(&ctx.accounts.reserve_liquidity_supply.to_account_info())?;
 
-    let Clock {
-        slot: current_slot,
-        unix_timestamp,
-        ..
-    } = Clock::get()?;
-    let current_timestamp: u64 = unix_timestamp.try_into().unwrap();
-
-    let reserves_iter = ctx
-        .remaining_accounts
-        .iter()
-        .take(reserves_count)
-        .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
-
     vault_operations::refresh_rewards(vault_state, current_timestamp)?;
-
-    let initial_holdings_total =
-        holdings(vault_state, reserves_iter.clone(), current_slot)?.total_sum;
+    let initial_holdings_total = holdings(vault_state, reserves_iter.clone())?.total_sum;
 
    
     let invest_effects = vault_operations::invest(
@@ -103,7 +87,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
         rounding_loss
     );
 
-    let aum_before_transfers = capture_aum(vault_state, reserves_iter.clone(), current_slot)?;
+    let aum_before_transfers = capture_aum(vault_state, reserves_iter.clone())?;
 
     drop(reserve);
 
@@ -153,9 +137,8 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
 
     drop(cpi_mem);
 
-    let aum_after_transfers = capture_aum(vault_state, reserves_iter.clone(), current_slot)?;
-    let final_holdings_total =
-        holdings(vault_state, reserves_iter.clone(), current_slot)?.total_sum;
+    let aum_after_transfers = capture_aum(vault_state, reserves_iter.clone())?;
+    let final_holdings_total = holdings(vault_state, reserves_iter.clone())?.total_sum;
 
     let token_vault_after = amount(&ctx.accounts.token_vault.to_account_info())?;
     let ctoken_vault_after = amount(&ctx.accounts.ctoken_vault.to_account_info())?;
@@ -185,9 +168,8 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
 fn capture_aum<'info, T: AnyAccountLoader<'info, Reserve>>(
     vault_state: &VaultState,
     reserves_iter: impl Iterator<Item = T>,
-    current_slot: Slot,
 ) -> Result<Fraction> {
-    let (_, invested) = underlying_inventory(vault_state, reserves_iter, current_slot)?;
+    let (_, invested) = underlying_inventory(vault_state, reserves_iter)?;
     vault_state.compute_aum(&invested.total)
 }
 

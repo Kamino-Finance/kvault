@@ -48,7 +48,6 @@ pub fn process(ctx: Context<InitVault>) -> Result<()> {
         vault,
         reserves_iter,
         INITIAL_DEPOSIT_AMOUNT,
-        clock.slot,
         clock.unix_timestamp.try_into().unwrap(),
     )?;
 

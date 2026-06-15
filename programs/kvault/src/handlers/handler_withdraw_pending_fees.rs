@@ -5,7 +5,7 @@ use anchor_spl::{
     token::Token,
     token_interface::{accessor::amount, TokenAccount, TokenInterface},
 };
-use kamino_lending::{utils::FatAccountLoader, Reserve};
+use kamino_lending::Reserve;
 
 use crate::{
     operations::{
@@ -25,16 +25,14 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
     );
 
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
-    let reserves_count = vault_state.get_reserves_count();
+    let clock = Clock::get()?;
 
-    {
-       
-        klend_operations::cpi_refresh_reserves(
-            &mut cpi_mem,
-            ctx.remaining_accounts.iter().take(reserves_count),
-            reserves_count,
-        )?;
-    }
+    let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
+        &mut cpi_mem,
+        vault_state,
+        ctx.remaining_accounts,
+        clock.slot,
+    )?;
 
     let reserve = ctx.accounts.reserve.load()?;
     let bump = vault_state.base_vault_authority_bump;
@@ -45,12 +43,6 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
     let ctoken_vault_before = ctx.accounts.ctoken_vault.amount;
     let admin_ata_before = ctx.accounts.token_ata.amount;
     let reserve_supply_liquidity_before = ctx.accounts.reserve_liquidity_supply.amount;
-
-    let reserves_iter = ctx
-        .remaining_accounts
-        .iter()
-        .take(reserves_count)
-        .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
     let reserve_allocation = vault_state.allocation_for_reserve(reserve_address)?;
     require_keys_eq!(
@@ -64,8 +56,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, WithdrawPendingFees<'info>
             reserve_address,
             &reserve,
             reserves_iter,
-            Clock::get()?.slot,
-            Clock::get()?.unix_timestamp.try_into().unwrap(),
+            clock.unix_timestamp.try_into().unwrap(),
         )?
     };
 

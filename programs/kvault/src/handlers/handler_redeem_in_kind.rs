@@ -5,18 +5,12 @@ use anchor_spl::{
     token::Token,
     token_interface::{accessor::amount, Mint, TokenAccount},
 };
-use kamino_lending::{
-    fraction::Fraction,
-    utils::{AnyAccountLoader, FatAccountLoader},
-    Reserve,
-};
-use solana_program::clock::Slot;
+use kamino_lending::{fraction::Fraction, utils::AnyAccountLoader, Reserve};
 
 use crate::{
     events::{RedeemInKindResultEvent, SharesToWithdrawEvent},
     operations::{
         effects::RedeemInKindEffects,
-        klend_operations,
         vault_checks::{post_redeem_in_kind_checks, RedeemInKindPostCheckAmounts},
         vault_operations::{self, common::underlying_inventory},
     },
@@ -39,21 +33,13 @@ pub fn redeem_in_kind<'info>(
 
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
     let global_config = &ctx.accounts.global_config.load()?;
-    let reserves_count = vault_state.get_reserves_count();
     let clock = Clock::get()?;
-    let current_slot = clock.slot;
 
-    let make_reserves_iter = || {
-        ctx.remaining_accounts
-            .iter()
-            .take(reserves_count)
-            .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap())
-    };
-
-    klend_operations::cpi_refresh_reserves(
+    let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
         &mut cpi_mem,
-        ctx.remaining_accounts.iter().take(reserves_count),
-        reserves_count,
+        vault_state,
+        ctx.remaining_accounts,
+        clock.slot,
     )?;
 
    
@@ -78,7 +64,7 @@ pub fn redeem_in_kind<'info>(
         global_config,
         reserve_address,
         reserve_state: &reserve,
-        reserves_iter: make_reserves_iter(),
+        reserves_iter: reserves_iter.clone(),
         shares_amount,
         clock: &clock,
     })?;
@@ -118,7 +104,7 @@ pub fn redeem_in_kind<'info>(
         ctx.accounts.ctoken_mint.decimals,
     )?;
 
-    let vault_aum_after = calculate_vault_aum(vault_state, make_reserves_iter(), current_slot)?;
+    let vault_aum_after = calculate_vault_aum(vault_state, reserves_iter.clone())?;
     let amounts_after = collect_post_check_amounts(ctx.accounts, &vault_aum_after)?;
     post_redeem_in_kind_checks(
         &amounts_before,
@@ -150,9 +136,8 @@ fn collect_post_check_amounts(
 fn calculate_vault_aum<'a>(
     vault_state: &VaultState,
     reserves_iter: impl Iterator<Item = impl AnyAccountLoader<'a, Reserve>>,
-    current_slot: Slot,
 ) -> Result<Fraction> {
-    let (_, invested) = underlying_inventory(vault_state, reserves_iter, current_slot)?;
+    let (_, invested) = underlying_inventory(vault_state, reserves_iter)?;
     let vault_aum = vault_state.compute_aum(&invested.total)?;
     Ok(vault_aum)
 }

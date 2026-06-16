@@ -3,11 +3,10 @@ use anchor_spl::{
     token::{accessor::amount, Token},
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
-use kamino_lending::{utils::FatAccountLoader, Reserve};
 
 use crate::{
     events::{DepositResultEvent, DepositUserAtaBalanceEvent},
-    operations::{effects::DepositEffects, klend_operations, vault_operations},
+    operations::{effects::DepositEffects, vault_operations},
     utils::{
         cpi_mem::CpiMemoryLender,
         token_ops::{self, shares, tokens::UserTransferAccounts},
@@ -27,16 +26,14 @@ pub fn process<'info>(
         ctx.remaining_accounts,
     );
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
-    let reserves_count = vault_state.get_reserves_count();
+    let clock = Clock::get()?;
 
-    {
-       
-        klend_operations::cpi_refresh_reserves(
-            &mut cpi_mem,
-            ctx.remaining_accounts.iter().take(reserves_count),
-            reserves_count,
-        )?;
-    }
+    let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
+        &mut cpi_mem,
+        vault_state,
+        ctx.remaining_accounts,
+        clock.slot,
+    )?;
 
     let user_initial_shares_balance = ctx.accounts.user_shares_ata.amount;
     let user_intial_ata_balance = ctx.accounts.user_token_ata.amount;
@@ -44,12 +41,6 @@ pub fn process<'info>(
     emit_cpi!(DepositUserAtaBalanceEvent {
         user_ata_balance: user_intial_ata_balance,
     });
-
-    let reserves_iter = ctx
-        .remaining_accounts
-        .iter()
-        .take(reserves_count)
-        .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
     let DepositEffects {
         shares_to_mint,
@@ -59,8 +50,7 @@ pub fn process<'info>(
         vault_state,
         reserves_iter,
         max_amount,
-        Clock::get()?.slot,
-        Clock::get()?.unix_timestamp.try_into().unwrap(),
+        clock.unix_timestamp.try_into().unwrap(),
     )?;
     emit_cpi!(DepositResultEvent {
         shares_to_mint,

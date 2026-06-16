@@ -34,6 +34,7 @@ pub enum VaultConfigField {
     AllowAllocationsInWhitelistedReservesOnly,
     AllowInvestInWhitelistedReservesOnly,
     RewardPerSecond,
+    DepositCap,
 }
 
 pub fn check_if_signer_allowed_to_update_vault_config(
@@ -66,7 +67,8 @@ pub fn check_if_signer_allowed_to_update_vault_config(
         | VaultConfigField::CrankFundFeePerReserve
         | VaultConfigField::LookupTable
         | VaultConfigField::Name
-        | VaultConfigField::Farm => {
+        | VaultConfigField::Farm
+        | VaultConfigField::DepositCap => {
             require!(
                 is_global_admin || is_vault_admin,
                 KaminoVaultError::AdminAuthorityIncorrect
@@ -263,7 +265,12 @@ pub fn update_vault_config(
             vault.reward_info.reward_per_second = new_rps;
             vault.reward_info.last_issuance_ts = current_ts;
         }
+        VaultConfigField::DepositCap => {
+            let value: u64 = BorshDeserialize::try_from_slice(data)?;
+            msg!("Prv value is {:?}", vault.deposit_cap);
+            msg!("New value is {:?}", value);
+            vault.deposit_cap = value;
+        }
     }
-
     Ok(())
 }

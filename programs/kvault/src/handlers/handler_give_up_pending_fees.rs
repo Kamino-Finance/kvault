@@ -1,11 +1,6 @@
 use anchor_lang::prelude::*;
-use kamino_lending::{utils::FatAccountLoader, Reserve};
 
-use crate::{
-    operations::{klend_operations, vault_operations},
-    utils::cpi_mem::CpiMemoryLender,
-    VaultState,
-};
+use crate::{operations::vault_operations, utils::cpi_mem::CpiMemoryLender, VaultState};
 
 pub fn process<'info>(
     ctx: Context<'_, '_, '_, 'info, GiveUpPendingFees<'info>>,
@@ -18,27 +13,17 @@ pub fn process<'info>(
 
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
     let clock = Clock::get()?;
-    let reserves_count = vault_state.get_reserves_count();
 
-    {
-       
-        klend_operations::cpi_refresh_reserves(
-            &mut cpi_mem,
-            ctx.remaining_accounts.iter().take(reserves_count),
-            reserves_count,
-        )?;
-    }
-
-    let reserves_iter = ctx
-        .remaining_accounts
-        .iter()
-        .take(reserves_count)
-        .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
+    let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
+        &mut cpi_mem,
+        vault_state,
+        ctx.remaining_accounts,
+        clock.slot,
+    )?;
 
     vault_operations::give_up_pending_fee(
         vault_state,
         reserves_iter,
-        clock.slot,
         u64::try_from(clock.unix_timestamp).unwrap(),
         max_amount_to_give_up,
     )?;

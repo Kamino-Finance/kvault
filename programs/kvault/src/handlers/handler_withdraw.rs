@@ -5,7 +5,7 @@ use anchor_spl::{
     token::Token,
     token_interface::{accessor::amount, Mint, TokenAccount, TokenInterface},
 };
-use kamino_lending::{utils::FatAccountLoader, Reserve};
+use kamino_lending::Reserve;
 
 use crate::{
     operations::{
@@ -189,7 +189,7 @@ pub mod withdraw_utils {
         let vault_state: &mut std::cell::RefMut<'_, VaultState> =
             &mut withdraw_from_available_accounts.vault_state.load_mut()?;
         let global_config = &withdraw_from_available_accounts.global_config.load()?;
-        let reserves_count = vault_state.get_reserves_count();
+        let clock = Clock::get()?;
 
        
         let token_vault_before = withdraw_from_available_accounts.token_vault.amount;
@@ -215,16 +215,12 @@ pub mod withdraw_utils {
             user_shares_before,
         };
 
-        klend_operations::cpi_refresh_reserves(
+        let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
             &mut cpi_mem,
-            remaining_accounts.iter().take(reserves_count),
-            reserves_count,
+            vault_state,
+            remaining_accounts,
+            clock.slot,
         )?;
-
-        let reserves_iter = remaining_accounts
-            .iter()
-            .take(reserves_count)
-            .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap());
 
         let (reserve_address_to_withdraw_from, reserve_state_to_withdraw_from, ctokens): (_, _, _) =
             if should_withdraw_from_invested {
@@ -255,8 +251,7 @@ pub mod withdraw_utils {
             reserve_address_to_withdraw_from,
             reserve_state_to_withdraw_from.as_deref(),
             reserves_iter,
-            Clock::get()?.unix_timestamp.try_into().unwrap(),
-            Clock::get()?.slot,
+            clock.unix_timestamp.try_into().unwrap(),
             shares_amount,
             ctokens,
         )?;

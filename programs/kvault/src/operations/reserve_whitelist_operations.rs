@@ -1,6 +1,8 @@
 use anchor_lang::prelude::*;
 
-use crate::{KaminoVaultError, ReserveWhitelistEntry, VaultState};
+use crate::{
+    operations::effects::InvestingDirection, KaminoVaultError, ReserveWhitelistEntry, VaultState,
+};
 
 #[derive(Clone, Copy, Debug, AnchorSerialize, AnchorDeserialize)]
 pub enum UpdateReserveWhitelistMode {
@@ -76,6 +78,28 @@ pub fn check_can_update_allocation_weight(
             reserve_whitelist_entry.is_add_allocation_whitelisted(),
             KaminoVaultError::ReserveNotWhitelisted
         );
+    }
+
+    Ok(())
+}
+
+pub fn check_can_invest(
+    vault: &VaultState,
+    direction: InvestingDirection,
+    reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
+) -> Result<()> {
+    match direction {
+        InvestingDirection::Add => {
+            if vault.vault_allows_invest_in_whitelisted_reserves_only() {
+                let reserve_whitelist_entry =
+                    reserve_whitelist_entry.ok_or(KaminoVaultError::ReserveNotWhitelisted)?;
+                require!(
+                    reserve_whitelist_entry.is_invest_whitelisted(),
+                    KaminoVaultError::ReserveNotWhitelisted
+                );
+            }
+        }
+        InvestingDirection::Subtract => {}
     }
 
     Ok(())

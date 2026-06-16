@@ -363,6 +363,9 @@ pub enum KaminoVaultError {
 
     #[msg("Rewards are stale - must be refreshed before updating fees")]
     RewardsStaleForFeeUpdate,
+
+    #[msg("Vault deposit cap reached")]
+    VaultDepositCapReached,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

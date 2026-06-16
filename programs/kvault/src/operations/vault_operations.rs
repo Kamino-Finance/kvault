@@ -11,9 +11,12 @@ use kamino_lending::{
 use rust_decimal::prelude::ToPrimitive;
 use solana_program::pubkey::Pubkey;
 
-use super::effects::{
-    DepositEffects, InvestEffects, InvestingDirection, RedeemInKindEffects, WithdrawEffects,
-    WithdrawPendingFeesEffects,
+use super::{
+    effects::{
+        DepositEffects, InvestEffects, InvestingDirection, RedeemInKindEffects, WithdrawEffects,
+        WithdrawPendingFeesEffects,
+    },
+    reserve_whitelist_operations,
 };
 use crate::{
     kmsg, kmsg_sized,
@@ -39,6 +42,7 @@ pub fn initialize(
     vault.token_available = 0;
     vault.shares_issued = 0;
     vault.creation_timestamp = current_timestamp;
+    vault.deposit_cap = u64::MAX;
 
     vault.validate()
 }
@@ -48,7 +52,6 @@ pub fn deposit<'info, T>(
     vault: &mut VaultState,
     reserves_iter: impl Iterator<Item = T>,
     max_amount: u64,
-    current_slot: Slot,
     current_timestamp: u64,
 ) -> Result<DepositEffects>
 where
@@ -62,9 +65,9 @@ where
         .unwrap();
     let crank_funds_to_deposit = num_reserve * vault.crank_fund_fee_per_reserve;
 
-    let max_user_tokens_to_deposit = max_amount - crank_funds_to_deposit;
+    let raw_max_user_tokens_to_deposit = max_amount - crank_funds_to_deposit;
 
-    let holdings = holdings(vault, reserves_iter, current_slot)?;
+    let holdings = holdings(vault, reserves_iter)?;
 
     kmsg!(
         "holdings available {} total invested {}",
@@ -75,6 +78,22 @@ where
 
     charge_fees(vault, &holdings.invested, current_timestamp)?;
     let current_vault_aum = vault.compute_aum(&holdings.invested.total)?;
+    let max_depositable_to_cap = common::get_max_depositable_in_vault(vault, current_vault_aum);
+    if max_depositable_to_cap == 0 {
+        msg!(
+            "vault deposit cap reached: current_vault_aum {} deposit_cap {}",
+            current_vault_aum.to_display(),
+            vault.deposit_cap
+        );
+        return err!(KaminoVaultError::VaultDepositCapReached);
+    }
+    let deposit_limited_by_cap = raw_max_user_tokens_to_deposit > max_depositable_to_cap;
+    let max_user_tokens_to_deposit = if deposit_limited_by_cap {
+        msg!("max_user_tokens_to_deposit {} is greater than max_depositable_to_cap {}, using max_depositable_to_cap", raw_max_user_tokens_to_deposit, max_depositable_to_cap);
+        max_depositable_to_cap
+    } else {
+        raw_max_user_tokens_to_deposit
+    };
 
     let shares_to_mint = get_shares_to_mint(
         current_vault_aum,
@@ -88,6 +107,10 @@ where
     );
 
     if user_tokens_to_deposit < vault.min_deposit_amount {
+        msg!("user_tokens_to_deposit {} is less than min_deposit_amount {}, with max_depositable_to_cap {}", user_tokens_to_deposit, vault.min_deposit_amount, max_depositable_to_cap);
+        if deposit_limited_by_cap {
+            return err!(KaminoVaultError::VaultDepositCapReached);
+        }
         return err!(KaminoVaultError::DepositAmountBelowMinimum);
     }
 
@@ -124,13 +147,12 @@ fn update_vault_fees_and_validate_holdings_aum<'info, T>(
     vault: &mut VaultState,
     reserves_iter: impl Iterator<Item = T>,
     current_timestamp: u64,
-    current_slot: Slot,
 ) -> Result<VaultHoldingsAndCurrentAUM>
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
    
-    let holdings = holdings(vault, reserves_iter, current_slot)?;
+    let holdings = holdings(vault, reserves_iter)?;
 
     charge_fees(vault, &holdings.invested, current_timestamp)?;
 
@@ -157,7 +179,6 @@ pub fn withdraw<'info, T>(
     reserve_state_to_withdraw_from: Option<&Reserve>,
     reserves_iter: impl Iterator<Item = T>,
     current_timestamp: u64,
-    current_slot: Slot,
     number_of_shares: u64,
     reserve_ctokens_owned: Option<u64>,
 ) -> Result<WithdrawEffects>
@@ -174,12 +195,7 @@ where
     let VaultHoldingsAndCurrentAUM {
         holdings,
         current_vault_aum,
-    } = update_vault_fees_and_validate_holdings_aum(
-        vault,
-        reserves_iter,
-        current_timestamp,
-        current_slot,
-    )?;
+    } = update_vault_fees_and_validate_holdings_aum(vault, reserves_iter, current_timestamp)?;
 
     let total_shares_supply = vault.shares_issued;
 
@@ -208,6 +224,7 @@ where
 
     let (
         invested_liquidity_to_send_to_user_f,
+        invested_liquidity_to_send_to_user,
         invested_liquidity_to_disinvest,
         invested_to_disinvest_ctokens,
         liquidity_rounding_error,
@@ -221,27 +238,27 @@ where
 
        
         if invested_liquidity_to_send_to_user_f.eq(&Fraction::ZERO) {
-            (Fraction::ZERO, 0, 0, 0)
+            (Fraction::ZERO, 0, 0, 0, 0)
         } else {
-            let exchange_rate = reserve_state_to_withdraw_from
-                .unwrap()
-                .collateral_exchange_rate();
+            let reserve_state_to_withdraw_from = reserve_state_to_withdraw_from.unwrap();
+            let exchange_rate = reserve_state_to_withdraw_from.collateral_exchange_rate();
+            let invested_liquidity_to_send_to_user =
+                invested_liquidity_to_send_to_user_f.to_floor::<u64>();
 
            
-            let invested_to_disinvest_ctokens: u64 = exchange_rate
-                .fraction_liquidity_to_collateral_ceil(invested_liquidity_to_send_to_user_f.floor())
-                .to_ceil();
+            let invested_to_disinvest_ctokens: u64 =
+                exchange_rate.liquidity_to_collateral_ceil(invested_liquidity_to_send_to_user);
             let max_ctokens_to_disinvest = reserve_ctokens_owned.unwrap_or(0);
            
             let invested_to_disinvest_ctokens =
                 invested_to_disinvest_ctokens.min(max_ctokens_to_disinvest);
 
            
+            let invested_liquidity_to_disinvest =
+                exchange_rate.collateral_to_liquidity(invested_to_disinvest_ctokens);
             let invested_liquidity_to_disinvest_f = exchange_rate.fraction_collateral_to_liquidity(
                 Fraction::from_num(invested_to_disinvest_ctokens),
             );
-            let invested_liquidity_to_disinvest =
-                invested_liquidity_to_disinvest_f.to_floor::<u64>();
 
            
             let liquidity_rounding_error: u64 = if invested_liquidity_to_disinvest_f.frac()
@@ -255,16 +272,16 @@ where
             };
             (
                 invested_liquidity_to_send_to_user_f,
+                invested_liquidity_to_send_to_user,
                 invested_liquidity_to_disinvest,
                 invested_to_disinvest_ctokens,
                 liquidity_rounding_error,
             )
         }
     } else {
-        (Fraction::ZERO, 0, 0, 0)
+        (Fraction::ZERO, 0, 0, 0, 0)
     };
 
-    let invested_liquidity_to_send_to_user: u64 = invested_liquidity_to_send_to_user_f.to_floor();
    
     let theoretical_amount_to_send_to_user_f =
         Fraction::from(available_to_send_to_user + withdrawal_penalty)
@@ -340,7 +357,6 @@ pub fn withdraw_pending_fees<'info, T>(
     reserve_address_to_withdraw_from: &Pubkey,
     reserve_state_to_withdraw_from: &Reserve,
     reserves_iter: impl Iterator<Item = T>,
-    current_slot: Slot,
     current_timestamp: u64,
 ) -> Result<WithdrawPendingFeesEffects>
 where
@@ -353,7 +369,7 @@ where
         invested,
         available,
         total_sum,
-    } = holdings(vault, reserves_iter, current_slot)?;
+    } = holdings(vault, reserves_iter)?;
 
     msg!(
         "holdings invested {:?} available {:?} total_sum {}",
@@ -382,16 +398,17 @@ where
         exchange_rate.liquidity_to_collateral_ceil(invested_liquidity_to_send_to_user);
 
    
-    let invested_liquidity_to_disinvest_f =
-        exchange_rate.fraction_collateral_to_liquidity(invested_to_disinvest_ctokens.into());
-    let invested_liquidity_to_disinvest = invested_liquidity_to_disinvest_f.to_floor::<u64>();
+   
+    let invested_liquidity_to_disinvest =
+        exchange_rate.collateral_to_liquidity(invested_to_disinvest_ctokens);
 
-    let liquidity_rounding_error = if invested_liquidity_to_disinvest_f.frac() > Fraction::ZERO {
-        1
-    } else {
-        0
-    };
+    let liquidity_rounding_error = exchange_rate
+        .collateral_to_liquidity_ceil(invested_to_disinvest_ctokens)
+        - invested_liquidity_to_disinvest;
 
+   
+   
+   
     let actual_invested_liquidity_to_send_to_user =
         invested_liquidity_to_send_to_user - liquidity_rounding_error;
     let disinvested_amount_left_in_vault =
@@ -424,7 +441,6 @@ where
 pub fn give_up_pending_fee<'info, T>(
     vault: &mut VaultState,
     reserves_iter: impl Iterator<Item = T>,
-    current_slot: Slot,
     current_timestamp: u64,
     max_amount_to_give_up: u64,
 ) -> Result<()>
@@ -432,7 +448,7 @@ where
     T: AnyAccountLoader<'info, Reserve>,
 {
     refresh_rewards(vault, current_timestamp)?;
-    let holdings = holdings(vault, reserves_iter, current_slot)?;
+    let holdings = holdings(vault, reserves_iter)?;
     msg!("holdings {:?}", holdings);
     let invested = &holdings.invested;
 
@@ -477,7 +493,7 @@ pub fn invest<'info, T>(
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
-    let holdings = holdings(vault, reserves_iter, current_slot)?;
+    let holdings = holdings(vault, reserves_iter)?;
     kmsg_sized!(50, "holdings available {}", holdings.available);
     kmsg_sized!(
         50,
@@ -538,17 +554,7 @@ where
         return err!(KaminoVaultError::InvestAmountBelowMinimum);
     }
 
-    match direction {
-        InvestingDirection::Add if vault.vault_allows_invest_in_whitelisted_reserves_only() => {
-            let reserve_whitelist_entry =
-                reserve_whitelist_entry.ok_or(KaminoVaultError::ReserveNotWhitelisted)?;
-            require!(
-                reserve_whitelist_entry.is_invest_whitelisted(),
-                KaminoVaultError::ReserveNotWhitelisted
-            );
-        }
-        InvestingDirection::Add | InvestingDirection::Subtract => {}
-    }
+    reserve_whitelist_operations::check_can_invest(vault, direction, reserve_whitelist_entry)?;
 
     let exchange_rate = reserve.collateral_exchange_rate();
     let collateral_amount = if allocation_for_reserve.target_allocation_weight == 0 {
@@ -559,25 +565,27 @@ where
     };
 
    
-    let liquidity_amount_f =
-        exchange_rate.fraction_collateral_to_liquidity(collateral_amount.into());
+   
+   
+   
+   
+   
+   
+    let liquidity_amount_floor = exchange_rate.collateral_to_liquidity(collateral_amount);
+    let liquidity_amount_ceil = exchange_rate.collateral_to_liquidity_ceil(collateral_amount);
     let liquidity_amount: u64;
-    let mut rounding_loss: u64 = if liquidity_amount_f.frac() > Fraction::ZERO {
-        1
-    } else {
-        0
-    };
+    let mut rounding_loss: u64 = liquidity_amount_ceil - liquidity_amount_floor;
 
     match direction {
         InvestingDirection::Add => {
            
-            liquidity_amount = liquidity_amount_f.to_ceil();
+            liquidity_amount = liquidity_amount_ceil;
             common::withdraw_from_vault(vault, liquidity_amount - rounding_loss);
             common::deposit_into_vault_allocation(vault, collateral_amount, reserve_address)?;
         }
         InvestingDirection::Subtract => {
            
-            liquidity_amount = liquidity_amount_f.to_floor();
+            liquidity_amount = liquidity_amount_floor;
             common::deposit_into_vault(vault, liquidity_amount + rounding_loss);
             common::withdraw_from_vault_allocation(vault, collateral_amount, reserve_address)?;
         }
@@ -653,8 +661,7 @@ where
     } = update_vault_fees_and_validate_holdings_aum(
         vault_state,
         reserves_iter,
-        current_timestamp,
-        clock.slot,
+        clock.unix_timestamp.try_into().unwrap(),
     )?;
 
     let total_shares_supply = vault_state.shares_issued;
@@ -698,11 +705,8 @@ where
 
    
    
-   
-    let actual_liquidity_value_f = common::exchange_rate_fraction_collateral_to_liquidity_ceil(
-        reserve_state,
-        Fraction::from_num(ctokens_to_send_to_user),
-    );
+    let actual_liquidity_value_f = exchange_rate
+        .fraction_collateral_to_liquidity_ceil(Fraction::from_num(ctokens_to_send_to_user));
 
    
    
@@ -893,16 +897,126 @@ pub fn withdraw_rewards(vault: &mut VaultState, amount: u64, current_ts: u64) ->
 }
 
 pub mod common {
-    use anchor_lang::{error, Result};
+    use anchor_lang::{error, prelude::AccountInfo, Result};
     use kamino_lending::{
-        utils::{AnyAccountLoader, FULL_BPS},
+        utils::{AnyAccountLoader, FatAccountLoader, FULL_BPS},
         PriceStatusFlags, Reserve,
     };
     use solana_program::pubkey::Pubkey;
 
-    use crate::utils::fraction_utils::full_mul_fraction_ratio_ceil;
+    use crate::{
+        operations::klend_operations,
+        utils::{cpi_mem::CpiMemoryLender, fraction_utils::full_mul_fraction_ratio_ceil},
+    };
 
     use super::*;
+
+    pub fn get_max_depositable_in_vault(vault: &VaultState, holdings_aum: Fraction) -> u64 {
+        let deposit_cap = if vault.deposit_cap == 0 {
+            u64::MAX
+        } else {
+            vault.deposit_cap
+        };
+        let holdings_aum_rounded_up = holdings_aum.try_to_ceil::<u64>().unwrap_or(u64::MAX);
+
+        deposit_cap.saturating_sub(holdings_aum_rounded_up)
+    }
+
+
+    pub fn refresh_allocation_reserve_accounts<'a, 'info>(
+        cpi_mem: &mut CpiMemoryLender<'info>,
+        vault: &VaultState,
+        remaining_accounts: &'a [AccountInfo<'info>],
+        slot: Slot,
+    ) -> Result<impl Iterator<Item = FatAccountLoader<'info, Reserve>> + Clone + 'a>
+    where
+        'info: 'a,
+    {
+        let reserves_count = vault.get_reserves_count();
+        let reserves_iter = allocation_reserve_accounts_iter(remaining_accounts, reserves_count);
+
+        check_allocation_reserve_accounts_match(vault, reserves_iter.clone())?;
+        klend_operations::cpi_refresh_reserves(
+            cpi_mem,
+            remaining_accounts.iter().take(reserves_count),
+            reserves_count,
+        )?;
+        check_matched_allocation_reserves_refreshed(vault, reserves_iter.clone(), slot)?;
+
+        Ok(reserves_iter)
+    }
+
+    fn allocation_reserve_accounts_iter<'a, 'info>(
+        remaining_accounts: &'a [AccountInfo<'info>],
+        reserves_count: usize,
+    ) -> impl Iterator<Item = FatAccountLoader<'info, Reserve>> + Clone + 'a
+    where
+        'info: 'a,
+    {
+        remaining_accounts
+            .iter()
+            .take(reserves_count)
+            .map(|account_info| FatAccountLoader::<Reserve>::try_from(account_info).unwrap())
+    }
+
+    pub(crate) fn check_allocation_reserve_accounts_match<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+    ) -> Result<()>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        for allocation_state in vault.vault_allocation_strategy.iter() {
+            if allocation_state.reserve == Pubkey::default() {
+                continue;
+            }
+
+            let Some(reserve) = reserves_iter.next() else {
+                return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
+            };
+
+            if reserve.get_pubkey() != allocation_state.reserve {
+                return err!(KaminoVaultError::ReserveAccountAndKeyMismatch);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn check_matched_allocation_reserves_refreshed<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+        slot: Slot,
+    ) -> Result<()>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        for allocation_state in vault.vault_allocation_strategy.iter() {
+            if allocation_state.reserve == Pubkey::default() {
+                continue;
+            }
+
+            let Some(reserve) = reserves_iter.next() else {
+                return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
+            };
+
+            let reserve_key = reserve.get_pubkey();
+            let reserve = reserve
+                .get()
+                .map_err(|_| error!(KaminoVaultError::CouldNotDeserializeAccountAsReserve))?;
+
+            if reserve
+                .last_update
+                .is_stale(slot, PriceStatusFlags::NONE)
+                .unwrap()
+            {
+                msg!("Reserve {} is stale", reserve_key);
+                return err!(KaminoVaultError::ReserveIsStale);
+            }
+        }
+
+        Ok(())
+    }
 
     pub fn get_shares_to_mint(
         holdings_aum: Fraction,
@@ -923,22 +1037,9 @@ pub mod common {
         Ok(shares_to_mint.to_floor())
     }
 
-
-
-    pub fn exchange_rate_fraction_collateral_to_liquidity_ceil(
-        reserve: &Reserve,
-        collateral_amount_f: Fraction,
-    ) -> Fraction {
-        let liquidity_total_f = Fraction::from(reserve.liquidity.total_supply());
-        let collateral_supply_f = Fraction::from(reserve.collateral.mint_total_supply);
-
-        full_mul_fraction_ratio_ceil(liquidity_total_f, collateral_amount_f, collateral_supply_f)
-    }
-
     pub fn amounts_invested<'info, T>(
         vault: &VaultState,
         mut reserves_iter: impl Iterator<Item = T>,
-        slot: Slot,
     ) -> Result<Invested>
     where
         T: AnyAccountLoader<'info, Reserve>,
@@ -969,14 +1070,6 @@ pub mod common {
                 return err!(KaminoVaultError::ReserveAccountAndKeyMismatch);
             }
 
-            if reserve
-                .last_update
-                .is_stale(slot, PriceStatusFlags::NONE)
-                .unwrap()
-            {
-                return err!(KaminoVaultError::ReserveIsStale);
-            }
-
             let ctoken_amount = allocation_state.ctoken_allocation;
 
            
@@ -1000,12 +1093,11 @@ pub mod common {
     pub fn holdings<'info, T>(
         vault: &VaultState,
         reserves_iter: impl Iterator<Item = T>,
-        slot: Slot,
     ) -> Result<Holdings>
     where
         T: AnyAccountLoader<'info, Reserve>,
     {
-        let (available, invested) = underlying_inventory(vault, reserves_iter, slot)?;
+        let (available, invested) = underlying_inventory(vault, reserves_iter)?;
         let total_sum = Fraction::from(available) + invested.total;
 
         Ok(Holdings {
@@ -1018,13 +1110,12 @@ pub mod common {
     pub fn underlying_inventory<'info, T>(
         vault: &VaultState,
         reserves_iter: impl Iterator<Item = T>,
-        slot: Slot,
     ) -> Result<(u64, Invested)>
     where
         T: AnyAccountLoader<'info, Reserve>,
     {
         let available = available_to_invest(vault);
-        let invested = amounts_invested(vault, reserves_iter, slot)?;
+        let invested = amounts_invested(vault, reserves_iter)?;
         Ok((available, invested))
     }
 

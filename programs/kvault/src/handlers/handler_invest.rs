@@ -27,7 +27,15 @@ use crate::{
     ReserveWhitelistEntry, VaultState,
 };
 
-pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<()> {
+
+
+
+
+
+pub fn process<'info>(
+    ctx: Context<'_, '_, '_, 'info, Invest<'info>>,
+    max_amount: u64,
+) -> Result<()> {
     let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender(
         ctx.accounts.to_account_infos(),
         ctx.remaining_accounts,
@@ -70,6 +78,7 @@ pub fn process<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<
             .reserve_whitelist_entry
             .as_ref()
             .map(|acc| acc.as_ref()),
+        max_amount,
     )?;
 
     let InvestEffects {

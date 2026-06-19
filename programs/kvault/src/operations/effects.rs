@@ -25,13 +25,13 @@ pub struct WithdrawPendingFeesEffects {
     pub invested_liquidity_to_disinvest: u64,
 }
 
-#[derive(Debug, Copy, Clone, AnchorSerialize, AnchorDeserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
 pub enum InvestingDirection {
     Add,
     Subtract,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct InvestEffects {
     pub direction: InvestingDirection,
     pub liquidity_amount: u64,

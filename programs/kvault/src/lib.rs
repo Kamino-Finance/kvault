@@ -79,7 +79,17 @@ pub mod kamino_vault {
     }
 
     pub fn invest<'info>(ctx: Context<'_, '_, '_, 'info, Invest<'info>>) -> Result<()> {
-        handler_invest::process(ctx)
+        handler_invest::process(ctx, u64::MAX)
+    }
+
+
+
+
+    pub fn invest_with_max_amount<'info>(
+        ctx: Context<'_, '_, '_, 'info, Invest<'info>>,
+        max_amount: u64,
+    ) -> Result<()> {
+        handler_invest::process(ctx, max_amount)
     }
 
     pub fn update_vault_config<'info>(
@@ -366,6 +376,9 @@ pub enum KaminoVaultError {
 
     #[msg("Vault deposit cap reached")]
     VaultDepositCapReached,
+
+    #[msg("max_amount must be greater than 0")]
+    MaxInvestAmountMustBeGreaterThanZero,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

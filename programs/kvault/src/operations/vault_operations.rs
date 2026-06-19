@@ -480,6 +480,20 @@ where
     Ok(())
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+#[allow(clippy::too_many_arguments)]
 #[inline(never)]
 pub fn invest<'info, T>(
     vault: &mut VaultState,
@@ -489,10 +503,16 @@ pub fn invest<'info, T>(
     current_slot: Slot,
     current_timestamp: u64,
     reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
+    max_amount: u64,
 ) -> Result<InvestEffects>
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
+    require!(
+        max_amount > 0,
+        KaminoVaultError::MaxInvestAmountMustBeGreaterThanZero
+    );
+
     let holdings = holdings(vault, reserves_iter)?;
     kmsg_sized!(50, "holdings available {}", holdings.available);
     kmsg_sized!(
@@ -550,20 +570,43 @@ where
         (diff.min(Fraction::from(available)), InvestingDirection::Add)
     };
 
-    if liquidity_f <= vault.min_invest_amount {
-        return err!(KaminoVaultError::InvestAmountBelowMinimum);
-    }
+    let max_amount_f = Fraction::from(max_amount);
+    let is_capped_by_max_amount = liquidity_f > max_amount_f;
+    let liquidity_f = if is_capped_by_max_amount {
+        kmsg!(
+            "Amount to move {} is capped by max_amount {}",
+            liquidity_f.to_display(),
+            max_amount
+        );
+        max_amount_f
+    } else {
+        liquidity_f
+    };
+
+   
+   
+    let is_full_evacuation = allocation_for_reserve.target_allocation_weight == 0
+        && !is_capped_by_max_amount
+        && matches!(direction, InvestingDirection::Subtract);
 
     reserve_whitelist_operations::check_can_invest(vault, direction, reserve_whitelist_entry)?;
 
     let exchange_rate = reserve.collateral_exchange_rate();
-    let collateral_amount = if allocation_for_reserve.target_allocation_weight == 0 {
+    let collateral_amount = if is_full_evacuation {
         allocation_for_reserve.ctoken_allocation
     } else {
-        let collateral_f = exchange_rate.fraction_liquidity_to_collateral(liquidity_f);
-        collateral_f.to_floor()
+        if liquidity_f <= vault.min_invest_amount {
+            return err!(KaminoVaultError::InvestAmountBelowMinimum);
+        }
+        exchange_rate
+            .fraction_liquidity_to_collateral(liquidity_f)
+            .to_floor()
     };
 
+   
+   
+   
+   
    
    
    
@@ -593,12 +636,17 @@ where
 
    
    
-    if vault.available_crank_funds >= rounding_loss {
+    if !is_capped_by_max_amount && vault.available_crank_funds >= rounding_loss {
         vault.available_crank_funds -= rounding_loss;
         rounding_loss = 0;
     }
 
-    vault.set_allocation_last_invest_slot(reserve_address, current_slot)?;
+   
+   
+   
+    if !is_capped_by_max_amount {
+        vault.set_allocation_last_invest_slot(reserve_address, current_slot)?;
+    }
     Ok(InvestEffects {
         liquidity_amount,
         direction,

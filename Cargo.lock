@@ -530,7 +530,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive 0.10.3",
- "hashbrown 0.12.3",
+ "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -1391,8 +1391,8 @@ dependencies = [
 
 [[package]]
 name = "kamino_lending"
-version = "1.21.0"
-source = "git+https://github.com/Kamino-Finance/klend.git?tag=release/v1.21.0#a26220ce127fe571d9190011737c53e0fc09c415"
+version = "1.23.0"
+source = "git+https://github.com/Kamino-Finance/klend.git#c06001927d68895be487482bdd82dcf6e88e6348"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1418,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "kamino_vault"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -2249,7 +2249,7 @@ dependencies = [
  "anchor-lang",
  "bytemuck",
  "cfg-if",
- "num_enum 0.7.1",
+ "num_enum 0.5.11",
  "solana-program",
 ]
 
@@ -2261,7 +2261,7 @@ dependencies = [
  "anchor-lang",
  "bytemuck",
  "cfg-if",
- "num_enum 0.7.1",
+ "num_enum 0.5.11",
  "solana-program",
 ]
 

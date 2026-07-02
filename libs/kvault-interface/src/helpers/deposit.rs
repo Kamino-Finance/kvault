@@ -47,6 +47,40 @@ pub fn deposit(
     )
 }
 
+/// Build a `deposit_with_min_shares_out` instruction.
+///
+/// Same as [`deposit`], but includes `min_shares_out` as a slippage guard.
+pub fn deposit_with_min_shares_out(
+    vault: &VaultInfo,
+    user: Pubkey,
+    user_token_ata: Pubkey,
+    user_shares_ata: Pubkey,
+    max_amount: u64,
+    min_shares_out: u64,
+) -> Instruction {
+    let pdas = derive_vault_pdas(&vault.address);
+    let remaining = refresh_remaining_accounts(vault);
+
+    instructions::deposit::deposit_with_min_shares_out(
+        instructions::deposit::DepositAccounts {
+            user,
+            vault_state: vault.address,
+            token_vault: pdas.token_vault,
+            token_mint: vault.token_mint,
+            base_vault_authority: pdas.base_vault_authority,
+            shares_mint: pdas.shares_mint,
+            user_token_ata,
+            user_shares_ata,
+            klend_program: KLEND_PROGRAM_ID,
+            token_program: vault.token_program,
+            shares_token_program: TOKEN_PROGRAM_ID,
+        },
+        max_amount,
+        min_shares_out,
+        remaining,
+    )
+}
+
 /// Build a `buy` instruction.
 ///
 /// Same accounts and semantics as [`deposit`], but uses the `buy`
@@ -77,6 +111,40 @@ pub fn buy(
             shares_token_program: TOKEN_PROGRAM_ID,
         },
         max_amount,
+        remaining,
+    )
+}
+
+/// Build a `buy_with_min_shares_out` instruction.
+///
+/// Same as [`buy`], but includes `min_shares_out` as a slippage guard.
+pub fn buy_with_min_shares_out(
+    vault: &VaultInfo,
+    user: Pubkey,
+    user_token_ata: Pubkey,
+    user_shares_ata: Pubkey,
+    max_amount: u64,
+    min_shares_out: u64,
+) -> Instruction {
+    let pdas = derive_vault_pdas(&vault.address);
+    let remaining = refresh_remaining_accounts(vault);
+
+    instructions::deposit::buy_with_min_shares_out(
+        instructions::deposit::DepositAccounts {
+            user,
+            vault_state: vault.address,
+            token_vault: pdas.token_vault,
+            token_mint: vault.token_mint,
+            base_vault_authority: pdas.base_vault_authority,
+            shares_mint: pdas.shares_mint,
+            user_token_ata,
+            user_shares_ata,
+            klend_program: KLEND_PROGRAM_ID,
+            token_program: vault.token_program,
+            shares_token_program: TOKEN_PROGRAM_ID,
+        },
+        max_amount,
+        min_shares_out,
         remaining,
     )
 }

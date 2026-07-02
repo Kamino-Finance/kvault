@@ -1,6 +1,7 @@
 use kvault_interface::discriminators::{
-    compute_discriminator, identify_instruction, KvaultInstruction, BUY, DEPOSIT, INVEST,
-    INVEST_WITH_MAX_AMOUNT, REDEEM_IN_KIND, SELL, WITHDRAW, WITHDRAW_FROM_AVAILABLE,
+    compute_discriminator, identify_instruction, KvaultInstruction, BUY, BUY_WITH_MIN_SHARES_OUT,
+    DEPOSIT, DEPOSIT_WITH_MIN_SHARES_OUT, INVEST, INVEST_WITH_MAX_AMOUNT, REDEEM_IN_KIND, SELL,
+    WITHDRAW, WITHDRAW_FROM_AVAILABLE,
 };
 use kvault_interface::errors::KvaultError;
 use kvault_interface::pda;
@@ -14,7 +15,15 @@ use solana_sdk::pubkey::Pubkey;
 #[test]
 fn discriminators_match_computed() {
     assert_eq!(compute_discriminator("deposit"), DEPOSIT);
+    assert_eq!(
+        compute_discriminator("deposit_with_min_shares_out"),
+        DEPOSIT_WITH_MIN_SHARES_OUT
+    );
     assert_eq!(compute_discriminator("buy"), BUY);
+    assert_eq!(
+        compute_discriminator("buy_with_min_shares_out"),
+        BUY_WITH_MIN_SHARES_OUT
+    );
     assert_eq!(compute_discriminator("withdraw"), WITHDRAW);
     assert_eq!(compute_discriminator("sell"), SELL);
     assert_eq!(
@@ -33,7 +42,15 @@ fn discriminators_match_computed() {
 fn identify_instruction_roundtrips() {
     let cases = vec![
         (DEPOSIT, KvaultInstruction::Deposit),
+        (
+            DEPOSIT_WITH_MIN_SHARES_OUT,
+            KvaultInstruction::DepositWithMinSharesOut,
+        ),
         (BUY, KvaultInstruction::Buy),
+        (
+            BUY_WITH_MIN_SHARES_OUT,
+            KvaultInstruction::BuyWithMinSharesOut,
+        ),
         (WITHDRAW, KvaultInstruction::Withdraw),
         (SELL, KvaultInstruction::Sell),
         (

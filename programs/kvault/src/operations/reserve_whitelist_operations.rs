@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    operations::effects::InvestingDirection, KaminoVaultError, ReserveWhitelistEntry, VaultState,
+    operations::effects::InvestingDirection, CtokenCap, KaminoVaultError, ReserveWhitelistEntry,
+    VaultState,
 };
 
 #[derive(Clone, Copy, Debug, AnchorSerialize, AnchorDeserialize)]
@@ -57,19 +58,25 @@ pub fn check_can_update_allocation_weight(
     reserve_idx_in_allocation: Option<usize>,
     target_allocation_weight: u64,
     allocation_cap: u64,
+    ctoken_allocation_cap: CtokenCap,
     reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
 ) -> Result<()> {
    
-    let (current_weight, current_cap) = match reserve_idx_in_allocation {
+    let (current_weight, current_cap, current_ctoken_cap) = match reserve_idx_in_allocation {
         Some(idx) => (
             vault.vault_allocation_strategy[idx].target_allocation_weight,
             vault.vault_allocation_strategy[idx].token_allocation_cap,
+            vault.vault_allocation_strategy[idx].ctoken_allocation_cap(),
         ),
-        None => (0, 0),
+        None => (0, 0, CtokenCap::uncapped()),
     };
 
+    let ctoken_cap_increased = ctoken_allocation_cap > current_ctoken_cap;
+
    
-    if (target_allocation_weight > current_weight || allocation_cap > current_cap)
+    if (target_allocation_weight > current_weight
+        || allocation_cap > current_cap
+        || ctoken_cap_increased)
         && vault.vault_allows_allocations_in_whitelisted_reserves_only()
     {
         let reserve_whitelist_entry =

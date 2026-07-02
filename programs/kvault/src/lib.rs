@@ -38,28 +38,61 @@ pub mod kamino_vault {
         handler_init_vault::process(ctx)
     }
 
+
+
+
+
     pub fn update_reserve_allocation(
         ctx: Context<UpdateReserveAllocation>,
         weight: u64,
         cap: u64,
     ) -> Result<()> {
-        handler_update_reserve_allocation::process(ctx, weight, cap)
+        handler_update_reserve_allocation::process_v1(ctx, weight, cap)
+    }
+
+
+
+
+
+    pub fn update_reserve_allocation_v2(
+        ctx: Context<UpdateReserveAllocation>,
+        weight: u64,
+        cap: u64,
+        ctoken_allocation_cap: u64,
+    ) -> Result<()> {
+        handler_update_reserve_allocation::process_v2(ctx, weight, cap, ctoken_allocation_cap)
     }
 
     pub fn deposit<'info>(
         ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
         max_amount: u64,
     ) -> Result<()> {
-        handler_deposit::process(ctx, max_amount)
+        deposit_with_min_shares_out(ctx, max_amount, 0)
+    }
+
+    pub fn deposit_with_min_shares_out<'info>(
+        ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
+        max_amount: u64,
+        min_shares_out: u64,
+    ) -> Result<()> {
+        handler_deposit::process(ctx, max_amount, min_shares_out)
     }
 
     pub fn buy<'info>(
         ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
         max_amount: u64,
     ) -> Result<()> {
+        buy_with_min_shares_out(ctx, max_amount, 0)
+    }
+
+    pub fn buy_with_min_shares_out<'info>(
+        ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
+        max_amount: u64,
+        min_shares_out: u64,
+    ) -> Result<()> {
        
        
-        handler_deposit::process(ctx, max_amount)
+        handler_deposit::process(ctx, max_amount, min_shares_out)
     }
 
     pub fn withdraw<'info>(
@@ -379,6 +412,9 @@ pub enum KaminoVaultError {
 
     #[msg("max_amount must be greater than 0")]
     MaxInvestAmountMustBeGreaterThanZero,
+
+    #[msg("Shares out is below minimum requested")]
+    SharesOutBelowMinimum,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

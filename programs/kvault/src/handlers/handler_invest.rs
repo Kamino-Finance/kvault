@@ -7,10 +7,7 @@ use anchor_spl::{
     token::Token,
     token_interface::{self, accessor::amount, Mint, TokenAccount, TokenInterface},
 };
-use kamino_lending::{
-    utils::{AnyAccountLoader, Fraction},
-    Reserve,
-};
+use kamino_lending::Reserve;
 
 use crate::{
     kmsg,
@@ -18,10 +15,7 @@ use crate::{
         effects::{InvestEffects, InvestingDirection},
         klend_operations,
         vault_checks::{post_transfer_invest_checks, VaultBalances},
-        vault_operations::{
-            self,
-            common::{holdings, underlying_inventory},
-        },
+        vault_operations::{self, common::HoldingsBuffer},
     },
     utils::{consts::*, cpi_mem::CpiMemoryLender},
     ReserveWhitelistEntry, VaultState,
@@ -36,9 +30,10 @@ pub fn process<'info>(
     ctx: Context<'_, '_, '_, 'info, Invest<'info>>,
     max_amount: u64,
 ) -> Result<()> {
-    let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender(
+    let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender_with_max_data(
         ctx.accounts.to_account_infos(),
         ctx.remaining_accounts,
+        klend_operations::KLEND_CPI_U64_ARG_DATA_LEN,
     );
 
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
@@ -64,12 +59,12 @@ pub fn process<'info>(
         amount(&ctx.accounts.reserve_liquidity_supply.to_account_info())?;
 
     vault_operations::refresh_rewards(vault_state, current_timestamp)?;
-    let initial_holdings_total = holdings(vault_state, reserves_iter.clone())?.total_sum;
+    let mut holdings_buffer = HoldingsBuffer::new();
+    let mut holdings = holdings_buffer.compute(vault_state, reserves_iter.clone())?;
+    let initial_holdings_total = holdings.total_sum;
 
-   
-    let invest_effects = vault_operations::invest(
+    let invest_effects = vault_operations::invest_with_holdings_snapshot(
         vault_state,
-        reserves_iter.clone(),
         &reserve,
         reserve_address,
         current_slot,
@@ -79,6 +74,7 @@ pub fn process<'info>(
             .as_ref()
             .map(|acc| acc.as_ref()),
         max_amount,
+        &holdings,
     )?;
 
     let InvestEffects {
@@ -96,7 +92,12 @@ pub fn process<'info>(
         rounding_loss
     );
 
-    let aum_before_transfers = capture_aum(vault_state, reserves_iter.clone())?;
+   
+   
+   
+   
+    let pre_transfer_holdings = holdings.sync_reserve(vault_state, reserve_address, &reserve)?;
+    let aum_before_transfers = pre_transfer_holdings.aum;
 
     drop(reserve);
 
@@ -146,8 +147,16 @@ pub fn process<'info>(
 
     drop(cpi_mem);
 
-    let aum_after_transfers = capture_aum(vault_state, reserves_iter.clone())?;
-    let final_holdings_total = holdings(vault_state, reserves_iter.clone())?.total_sum;
+    let refreshed_reserve = ctx.accounts.reserve.load()?;
+   
+   
+   
+    let post_transfer_holdings =
+        holdings.sync_reserve(vault_state, reserve_address, &refreshed_reserve)?;
+    drop(refreshed_reserve);
+
+    let aum_after_transfers = post_transfer_holdings.aum;
+    let final_holdings_total = post_transfer_holdings.total_sum;
 
     let token_vault_after = amount(&ctx.accounts.token_vault.to_account_info())?;
     let ctoken_vault_after = amount(&ctx.accounts.ctoken_vault.to_account_info())?;
@@ -172,14 +181,6 @@ pub fn process<'info>(
     )?;
 
     Ok(())
-}
-
-fn capture_aum<'info, T: AnyAccountLoader<'info, Reserve>>(
-    vault_state: &VaultState,
-    reserves_iter: impl Iterator<Item = T>,
-) -> Result<Fraction> {
-    let (_, invested) = underlying_inventory(vault_state, reserves_iter)?;
-    vault_state.compute_aum(&invested.total)
 }
 
 #[derive(Accounts)]

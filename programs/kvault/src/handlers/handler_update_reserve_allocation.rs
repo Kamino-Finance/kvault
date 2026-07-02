@@ -8,14 +8,44 @@ use kamino_lending::Reserve;
 use crate::{
     operations::reserve_whitelist_operations,
     utils::consts::{CTOKEN_VAULT_SEED, WHITELISTED_RESERVES_SEED},
-    xmsg, KaminoVaultError, ReserveWhitelistEntry, VaultState,
+    xmsg, CtokenCap, KaminoVaultError, ReserveWhitelistEntry, VaultState,
 };
 
 
-pub fn process(
+
+
+
+
+
+
+
+pub fn process_v1(
     ctx: Context<UpdateReserveAllocation>,
     target_allocation_weight: u64,
     allocation_cap: u64,
+) -> Result<()> {
+    process_impl(ctx, target_allocation_weight, allocation_cap, None)
+}
+
+pub fn process_v2(
+    ctx: Context<UpdateReserveAllocation>,
+    target_allocation_weight: u64,
+    allocation_cap: u64,
+    ctoken_allocation_cap: u64,
+) -> Result<()> {
+    process_impl(
+        ctx,
+        target_allocation_weight,
+        allocation_cap,
+        Some(ctoken_allocation_cap),
+    )
+}
+
+fn process_impl(
+    ctx: Context<UpdateReserveAllocation>,
+    target_allocation_weight: u64,
+    allocation_cap: u64,
+    ctoken_allocation_cap_raw: Option<u64>,
 ) -> Result<()> {
     let vault = &mut ctx.accounts.vault_state.load_mut()?;
     let reserve = &ctx.accounts.reserve.load()?;
@@ -40,9 +70,17 @@ pub fn process(
         }
     }
 
+    let ctoken_allocation_cap = ctoken_allocation_cap_raw
+        .map(CtokenCap::new)
+        .unwrap_or_else(|| {
+            idx.map(|idx| vault.vault_allocation_strategy[idx].ctoken_allocation_cap())
+                .unwrap_or_default()
+        });
+
     let ctoken_vault_bump = ctx.bumps.ctoken_vault;
+    let ctoken_allocation_cap_raw = ctoken_allocation_cap.raw();
     xmsg!(
-        "Updating reserve {reserve_symbol:?} {reserve_key} with weight {target_allocation_weight} and cap {allocation_cap}",
+        "Updating reserve {reserve_symbol:?} {reserve_key} with weight {target_allocation_weight}, cap {allocation_cap}, ctoken cap {ctoken_allocation_cap_raw}",
         reserve_symbol=reserve.token_symbol(),
     );
 
@@ -53,6 +91,7 @@ pub fn process(
         idx,
         target_allocation_weight,
         allocation_cap,
+        ctoken_allocation_cap,
         ctx.accounts
             .reserve_whitelist_entry
             .as_ref()
@@ -65,6 +104,7 @@ pub fn process(
         u64::from(ctoken_vault_bump),
         target_allocation_weight,
         allocation_cap,
+        ctoken_allocation_cap,
     )?;
 
     Ok(())

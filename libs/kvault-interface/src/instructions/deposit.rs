@@ -78,6 +78,43 @@ pub fn deposit(
 }
 
 // ---------------------------------------------------------------------------
+// deposit_with_min_shares_out
+// ---------------------------------------------------------------------------
+
+/// Build a raw `deposit_with_min_shares_out` instruction.
+///
+/// Same accounts and semantics as [`deposit`], but includes `min_shares_out`
+/// as a slippage guard. The instruction fails if fewer shares would be minted.
+pub fn deposit_with_min_shares_out(
+    accounts: DepositAccounts,
+    max_amount: u64,
+    min_shares_out: u64,
+    remaining_accounts: Vec<AccountMeta>,
+) -> Instruction {
+    #[derive(BorshSerialize)]
+    struct Args {
+        max_amount: u64,
+        min_shares_out: u64,
+    }
+
+    let args = Args {
+        max_amount,
+        min_shares_out,
+    };
+    let mut data = discriminators::DEPOSIT_WITH_MIN_SHARES_OUT.to_vec();
+    args.serialize(&mut data).unwrap();
+
+    let mut account_metas = build_deposit_accounts(&accounts);
+    account_metas.extend(remaining_accounts);
+
+    Instruction {
+        program_id: KVAULT_PROGRAM_ID,
+        accounts: account_metas,
+        data,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // buy (same accounts and args as deposit, different discriminator)
 // ---------------------------------------------------------------------------
 
@@ -97,6 +134,43 @@ pub fn buy(
 
     let args = Args { max_amount };
     let mut data = discriminators::BUY.to_vec();
+    args.serialize(&mut data).unwrap();
+
+    let mut account_metas = build_deposit_accounts(&accounts);
+    account_metas.extend(remaining_accounts);
+
+    Instruction {
+        program_id: KVAULT_PROGRAM_ID,
+        accounts: account_metas,
+        data,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// buy_with_min_shares_out (same accounts and args as deposit_with_min_shares_out, different discriminator)
+// ---------------------------------------------------------------------------
+
+/// Build a raw `buy_with_min_shares_out` instruction.
+///
+/// Same accounts and semantics as [`deposit_with_min_shares_out`], but uses the `buy_with_min_shares_out`
+/// discriminator.
+pub fn buy_with_min_shares_out(
+    accounts: DepositAccounts,
+    max_amount: u64,
+    min_shares_out: u64,
+    remaining_accounts: Vec<AccountMeta>,
+) -> Instruction {
+    #[derive(BorshSerialize)]
+    struct Args {
+        max_amount: u64,
+        min_shares_out: u64,
+    }
+
+    let args = Args {
+        max_amount,
+        min_shares_out,
+    };
+    let mut data = discriminators::BUY_WITH_MIN_SHARES_OUT.to_vec();
     args.serialize(&mut data).unwrap();
 
     let mut account_metas = build_deposit_accounts(&accounts);

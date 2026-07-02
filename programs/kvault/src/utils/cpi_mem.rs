@@ -21,6 +21,9 @@ pub struct CpiMemoryLender<'info> {
 }
 
 impl<'info> CpiMemoryLender<'info> {
+    pub const DEFAULT_MAX_ACCOUNTS: usize = 64;
+    pub const DEFAULT_MAX_DATA: usize = 128;
+
 
     pub fn new(
         accounts_infos: Vec<AccountInfo<'info>>,
@@ -36,11 +39,24 @@ impl<'info> CpiMemoryLender<'info> {
 
 
     pub fn build_cpi_memory_lender(
-        mut ctx_accounts: Vec<AccountInfo<'info>>,
+        ctx_accounts: Vec<AccountInfo<'info>>,
         remaining_accounts: &[AccountInfo<'info>],
     ) -> Self {
+        Self::build_cpi_memory_lender_with_max_data(
+            ctx_accounts,
+            remaining_accounts,
+            Self::DEFAULT_MAX_DATA,
+        )
+    }
+
+
+    pub fn build_cpi_memory_lender_with_max_data(
+        mut ctx_accounts: Vec<AccountInfo<'info>>,
+        remaining_accounts: &[AccountInfo<'info>],
+        max_data: usize,
+    ) -> Self {
         ctx_accounts.extend_from_slice(remaining_accounts);
-        CpiMemoryLender::new(ctx_accounts, 64, 128)
+        CpiMemoryLender::new(ctx_accounts, Self::DEFAULT_MAX_ACCOUNTS, max_data)
     }
 
 

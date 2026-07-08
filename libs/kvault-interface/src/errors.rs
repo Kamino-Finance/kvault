@@ -203,6 +203,8 @@ define_kvault_errors! {
     VaultDepositCapReached = 1062 => "Vault deposit cap reached",
     /// Max invest amount must be greater than zero.
     MaxInvestAmountMustBeGreaterThanZero = 1063 => "max_amount must be greater than 0",
+        /// Shares minted are below the requested minimum.
+    SharesOutBelowMinimum = 1064 => "Shares out is below minimum requested",
 }
 
 impl std::error::Error for KvaultError {}
@@ -222,6 +224,7 @@ mod tests {
             KvaultError::MaxInvestAmountMustBeGreaterThanZero.error_code(),
             7063
         );
+        assert_eq!(KvaultError::SharesOutBelowMinimum.error_code(), 7064);
 
         assert_eq!(
             KvaultError::from_error_code(7000),

@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("      Weight: {}", alloc.target_allocation_weight);
         println!("      cToken balance: {}", alloc.ctoken_allocation);
         println!("      Token cap: {}", alloc.token_allocation_cap);
+        println!("      CToken cap: {}", alloc.ctoken_allocation_cap);
         println!("      Target allocation: {target:.6}");
     }
 

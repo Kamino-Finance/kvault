@@ -2,7 +2,7 @@ use anchor_lang::{
     err,
     prelude::{Context, Result},
     solana_program::{account_info::AccountInfo, instruction::AccountMeta},
-    Discriminator, InstructionData, Key, ToAccountMetas,
+    Discriminator, InstructionData, Key,
 };
 use kamino_lending::utils::FatAccountLoader;
 
@@ -11,6 +11,53 @@ use crate::{
     utils::{consts::BASE_VAULT_AUTHORITY_SEED, cpi_mem::CpiMemoryLender},
     KaminoVaultError, WithdrawPendingFees, MAX_RESERVES,
 };
+
+const DEPOSIT_RESERVE_LIQUIDITY_ACCOUNT_COUNT: usize = 12;
+const REDEEM_RESERVE_COLLATERAL_ACCOUNT_COUNT: usize = 12;
+
+pub const KLEND_CPI_U64_ARG_DATA_LEN: usize =
+    kamino_lending::instruction::DepositReserveLiquidity::DISCRIMINATOR.len()
+        + std::mem::size_of::<u64>();
+
+#[inline(always)]
+fn deposit_reserve_liquidity_fixed_metas(
+    accs: kamino_lending::accounts::DepositReserveLiquidity,
+) -> [AccountMeta; DEPOSIT_RESERVE_LIQUIDITY_ACCOUNT_COUNT] {
+    [
+        AccountMeta::new_readonly(accs.owner, true),
+        AccountMeta::new(accs.reserve, false),
+        AccountMeta::new_readonly(accs.lending_market, false),
+        AccountMeta::new_readonly(accs.lending_market_authority, false),
+        AccountMeta::new_readonly(accs.reserve_liquidity_mint, false),
+        AccountMeta::new(accs.reserve_liquidity_supply, false),
+        AccountMeta::new(accs.reserve_collateral_mint, false),
+        AccountMeta::new(accs.user_source_liquidity, false),
+        AccountMeta::new(accs.user_destination_collateral, false),
+        AccountMeta::new_readonly(accs.collateral_token_program, false),
+        AccountMeta::new_readonly(accs.liquidity_token_program, false),
+        AccountMeta::new_readonly(accs.instruction_sysvar_account, false),
+    ]
+}
+
+#[inline(always)]
+fn redeem_reserve_collateral_fixed_metas(
+    accs: kamino_lending::accounts::RedeemReserveCollateral,
+) -> [AccountMeta; REDEEM_RESERVE_COLLATERAL_ACCOUNT_COUNT] {
+    [
+        AccountMeta::new_readonly(accs.owner, true),
+        AccountMeta::new_readonly(accs.lending_market, false),
+        AccountMeta::new(accs.reserve, false),
+        AccountMeta::new_readonly(accs.lending_market_authority, false),
+        AccountMeta::new_readonly(accs.reserve_liquidity_mint, false),
+        AccountMeta::new(accs.reserve_collateral_mint, false),
+        AccountMeta::new(accs.reserve_liquidity_supply, false),
+        AccountMeta::new(accs.user_source_collateral, false),
+        AccountMeta::new(accs.user_destination_liquidity, false),
+        AccountMeta::new_readonly(accs.collateral_token_program, false),
+        AccountMeta::new_readonly(accs.liquidity_token_program, false),
+        AccountMeta::new_readonly(accs.instruction_sysvar_account, false),
+    ]
+}
 
 pub fn cpi_refresh_reserves<'a, 'info>(
     cpi: &mut CpiMemoryLender,
@@ -62,29 +109,29 @@ pub fn cpi_deposit_reserve_liquidity(
     base_vault_authority_bump: u8,
     liquidity_amount: u64,
 ) -> Result<()> {
-    let accs = kamino_lending::accounts::DepositReserveLiquidity {
-        owner: ctx.accounts.base_vault_authority.key(),
-        reserve: ctx.accounts.reserve.key(),
-        lending_market: ctx.accounts.lending_market.key(),
-        lending_market_authority: ctx.accounts.lending_market_authority.key(),
-        reserve_liquidity_mint: ctx.accounts.token_mint.key(),
-        reserve_liquidity_supply: ctx.accounts.reserve_liquidity_supply.key(),
-        reserve_collateral_mint: ctx.accounts.reserve_collateral_mint.key(),
-        user_source_liquidity: ctx.accounts.token_vault.key(),
-        user_destination_collateral: ctx.accounts.ctoken_vault.key(),
-        collateral_token_program: ctx.accounts.reserve_collateral_token_program.key(),
-        liquidity_token_program: ctx.accounts.token_program.key(),
-        instruction_sysvar_account: ctx.accounts.instruction_sysvar_account.key(),
-    }
-    .to_account_metas(None);
+    let accs =
+        deposit_reserve_liquidity_fixed_metas(kamino_lending::accounts::DepositReserveLiquidity {
+            owner: ctx.accounts.base_vault_authority.key(),
+            reserve: ctx.accounts.reserve.key(),
+            lending_market: ctx.accounts.lending_market.key(),
+            lending_market_authority: ctx.accounts.lending_market_authority.key(),
+            reserve_liquidity_mint: ctx.accounts.token_mint.key(),
+            reserve_liquidity_supply: ctx.accounts.reserve_liquidity_supply.key(),
+            reserve_collateral_mint: ctx.accounts.reserve_collateral_mint.key(),
+            user_source_liquidity: ctx.accounts.token_vault.key(),
+            user_destination_collateral: ctx.accounts.ctoken_vault.key(),
+            collateral_token_program: ctx.accounts.reserve_collateral_token_program.key(),
+            liquidity_token_program: ctx.accounts.token_program.key(),
+            instruction_sysvar_account: ctx.accounts.instruction_sysvar_account.key(),
+        });
 
-    let mut data = [0_u8; 40];
-    data[0..8]
-        .copy_from_slice(&kamino_lending::instruction::DepositReserveLiquidity::DISCRIMINATOR);
-    let mut writer = &mut data[8..40];
+    let mut data = [0_u8; KLEND_CPI_U64_ARG_DATA_LEN];
+    let discriminator = kamino_lending::instruction::DepositReserveLiquidity::DISCRIMINATOR;
+    data[..discriminator.len()].copy_from_slice(&discriminator);
+    let mut writer = &mut data[discriminator.len()..];
     borsh::to_writer(&mut writer, &liquidity_amount).unwrap();
 
-    let base_vault_authority_bump = vec![base_vault_authority_bump];
+    let base_vault_authority_bump = [base_vault_authority_bump];
     let vault_state_key = ctx.accounts.vault_state.key();
     let inner_seeds = [
         BASE_VAULT_AUTHORITY_SEED,
@@ -111,31 +158,31 @@ pub fn cpi_redeem_reserve_liquidity_from_withdraw(
 ) -> Result<()> {
     let from_available_accounts = from_available_ctx;
     let from_invested_accounts = from_invested_ctx;
-    let accs = kamino_lending::accounts::RedeemReserveCollateral {
-        owner: from_available_accounts.base_vault_authority.key(),
-        lending_market: from_invested_accounts.lending_market.key(),
-        reserve: from_invested_accounts.reserve.key(),
-        lending_market_authority: from_invested_accounts.lending_market_authority.key(),
-        reserve_liquidity_mint: from_available_accounts.token_mint.key(),
-        reserve_collateral_mint: from_invested_accounts.reserve_collateral_mint.key(),
-        reserve_liquidity_supply: from_invested_accounts.reserve_liquidity_supply.key(),
-        user_source_collateral: from_invested_accounts.ctoken_vault.key(),
-        user_destination_liquidity: from_available_accounts.token_vault.key(),
-        collateral_token_program: from_invested_accounts
-            .reserve_collateral_token_program
-            .key(),
-        liquidity_token_program: from_available_accounts.token_program.key(),
-        instruction_sysvar_account: from_invested_accounts.instruction_sysvar_account.key(),
-    }
-    .to_account_metas(None);
+    let accs =
+        redeem_reserve_collateral_fixed_metas(kamino_lending::accounts::RedeemReserveCollateral {
+            owner: from_available_accounts.base_vault_authority.key(),
+            lending_market: from_invested_accounts.lending_market.key(),
+            reserve: from_invested_accounts.reserve.key(),
+            lending_market_authority: from_invested_accounts.lending_market_authority.key(),
+            reserve_liquidity_mint: from_available_accounts.token_mint.key(),
+            reserve_collateral_mint: from_invested_accounts.reserve_collateral_mint.key(),
+            reserve_liquidity_supply: from_invested_accounts.reserve_liquidity_supply.key(),
+            user_source_collateral: from_invested_accounts.ctoken_vault.key(),
+            user_destination_liquidity: from_available_accounts.token_vault.key(),
+            collateral_token_program: from_invested_accounts
+                .reserve_collateral_token_program
+                .key(),
+            liquidity_token_program: from_available_accounts.token_program.key(),
+            instruction_sysvar_account: from_invested_accounts.instruction_sysvar_account.key(),
+        });
 
-    let mut data = [0_u8; 40];
-    data[0..8]
-        .copy_from_slice(&kamino_lending::instruction::RedeemReserveCollateral::DISCRIMINATOR);
-    let mut writer = &mut data[8..40];
+    let mut data = [0_u8; KLEND_CPI_U64_ARG_DATA_LEN];
+    let discriminator = kamino_lending::instruction::RedeemReserveCollateral::DISCRIMINATOR;
+    data[..discriminator.len()].copy_from_slice(&discriminator);
+    let mut writer = &mut data[discriminator.len()..];
     borsh::to_writer(&mut writer, &collateral_amount).unwrap();
 
-    let base_vault_authority_bump = vec![base_vault_authority_bump];
+    let base_vault_authority_bump = [base_vault_authority_bump];
     let vault_state_key = from_available_accounts.vault_state.key();
     let inner_seeds = [
         BASE_VAULT_AUTHORITY_SEED,
@@ -159,29 +206,29 @@ pub fn cpi_redeem_reserve_liquidity_from_withdraw_pending_fees(
     base_vault_authority_bump: u8,
     collateral_amount: u64,
 ) -> Result<()> {
-    let accs = kamino_lending::accounts::RedeemReserveCollateral {
-        owner: ctx.accounts.base_vault_authority.key(),
-        lending_market: ctx.accounts.lending_market.key(),
-        reserve: ctx.accounts.reserve.key(),
-        lending_market_authority: ctx.accounts.lending_market_authority.key(),
-        reserve_liquidity_mint: ctx.accounts.token_mint.key(),
-        reserve_collateral_mint: ctx.accounts.reserve_collateral_mint.key(),
-        reserve_liquidity_supply: ctx.accounts.reserve_liquidity_supply.key(),
-        user_source_collateral: ctx.accounts.ctoken_vault.key(),
-        user_destination_liquidity: ctx.accounts.token_vault.key(),
-        collateral_token_program: ctx.accounts.reserve_collateral_token_program.key(),
-        liquidity_token_program: ctx.accounts.token_program.key(),
-        instruction_sysvar_account: ctx.accounts.instruction_sysvar_account.key(),
-    }
-    .to_account_metas(None);
+    let accs =
+        redeem_reserve_collateral_fixed_metas(kamino_lending::accounts::RedeemReserveCollateral {
+            owner: ctx.accounts.base_vault_authority.key(),
+            lending_market: ctx.accounts.lending_market.key(),
+            reserve: ctx.accounts.reserve.key(),
+            lending_market_authority: ctx.accounts.lending_market_authority.key(),
+            reserve_liquidity_mint: ctx.accounts.token_mint.key(),
+            reserve_collateral_mint: ctx.accounts.reserve_collateral_mint.key(),
+            reserve_liquidity_supply: ctx.accounts.reserve_liquidity_supply.key(),
+            user_source_collateral: ctx.accounts.ctoken_vault.key(),
+            user_destination_liquidity: ctx.accounts.token_vault.key(),
+            collateral_token_program: ctx.accounts.reserve_collateral_token_program.key(),
+            liquidity_token_program: ctx.accounts.token_program.key(),
+            instruction_sysvar_account: ctx.accounts.instruction_sysvar_account.key(),
+        });
 
-    let mut data = [0_u8; 40];
-    data[0..8]
-        .copy_from_slice(&kamino_lending::instruction::RedeemReserveCollateral::DISCRIMINATOR);
-    let mut writer = &mut data[8..40];
+    let mut data = [0_u8; KLEND_CPI_U64_ARG_DATA_LEN];
+    let discriminator = kamino_lending::instruction::RedeemReserveCollateral::DISCRIMINATOR;
+    data[..discriminator.len()].copy_from_slice(&discriminator);
+    let mut writer = &mut data[discriminator.len()..];
     borsh::to_writer(&mut writer, &collateral_amount).unwrap();
 
-    let base_vault_authority_bump = vec![base_vault_authority_bump];
+    let base_vault_authority_bump = [base_vault_authority_bump];
     let vault_state_key = ctx.accounts.vault_state.key();
     let inner_seeds = [
         BASE_VAULT_AUTHORITY_SEED,
@@ -205,29 +252,29 @@ pub fn cpi_redeem_reserve_liquidity_from_invest(
     base_vault_authority_bump: u8,
     collateral_amount: u64,
 ) -> Result<()> {
-    let accs = kamino_lending::accounts::RedeemReserveCollateral {
-        owner: ctx.accounts.base_vault_authority.key(),
-        lending_market: ctx.accounts.lending_market.key(),
-        reserve: ctx.accounts.reserve.key(),
-        lending_market_authority: ctx.accounts.lending_market_authority.key(),
-        reserve_liquidity_mint: ctx.accounts.token_mint.key(),
-        reserve_collateral_mint: ctx.accounts.reserve_collateral_mint.key(),
-        reserve_liquidity_supply: ctx.accounts.reserve_liquidity_supply.key(),
-        user_source_collateral: ctx.accounts.ctoken_vault.key(),
-        user_destination_liquidity: ctx.accounts.token_vault.key(),
-        collateral_token_program: ctx.accounts.reserve_collateral_token_program.key(),
-        liquidity_token_program: ctx.accounts.token_program.key(),
-        instruction_sysvar_account: ctx.accounts.instruction_sysvar_account.key(),
-    }
-    .to_account_metas(None);
+    let accs =
+        redeem_reserve_collateral_fixed_metas(kamino_lending::accounts::RedeemReserveCollateral {
+            owner: ctx.accounts.base_vault_authority.key(),
+            lending_market: ctx.accounts.lending_market.key(),
+            reserve: ctx.accounts.reserve.key(),
+            lending_market_authority: ctx.accounts.lending_market_authority.key(),
+            reserve_liquidity_mint: ctx.accounts.token_mint.key(),
+            reserve_collateral_mint: ctx.accounts.reserve_collateral_mint.key(),
+            reserve_liquidity_supply: ctx.accounts.reserve_liquidity_supply.key(),
+            user_source_collateral: ctx.accounts.ctoken_vault.key(),
+            user_destination_liquidity: ctx.accounts.token_vault.key(),
+            collateral_token_program: ctx.accounts.reserve_collateral_token_program.key(),
+            liquidity_token_program: ctx.accounts.token_program.key(),
+            instruction_sysvar_account: ctx.accounts.instruction_sysvar_account.key(),
+        });
 
-    let mut data = [0_u8; 40];
-    data[0..8]
-        .copy_from_slice(&kamino_lending::instruction::RedeemReserveCollateral::DISCRIMINATOR);
-    let mut writer = &mut data[8..40];
+    let mut data = [0_u8; KLEND_CPI_U64_ARG_DATA_LEN];
+    let discriminator = kamino_lending::instruction::RedeemReserveCollateral::DISCRIMINATOR;
+    data[..discriminator.len()].copy_from_slice(&discriminator);
+    let mut writer = &mut data[discriminator.len()..];
     borsh::to_writer(&mut writer, &collateral_amount).unwrap();
 
-    let base_vault_authority_bump = vec![base_vault_authority_bump];
+    let base_vault_authority_bump = [base_vault_authority_bump];
     let vault_state_key = ctx.accounts.vault_state.key();
     let inner_seeds = [
         BASE_VAULT_AUTHORITY_SEED,
@@ -244,3 +291,4 @@ pub fn cpi_redeem_reserve_liquidity_from_invest(
     )
     .map_err(Into::into)
 }
+

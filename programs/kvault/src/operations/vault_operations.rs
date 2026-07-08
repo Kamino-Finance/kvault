@@ -1,8 +1,8 @@
 use core::fmt;
-use std::{fmt::Debug, ops::Mul};
+use std::ops::Mul;
 
 use anchor_lang::{err, prelude::*, require, solana_program::clock::Slot, Result};
-use common::{update_prev_aum, Holdings, Invested};
+use common::{update_prev_aum, Holdings, HoldingsBuffer, Invested};
 use kamino_lending::{
     fraction::Fraction,
     utils::{AnyAccountLoader, FractionExtra},
@@ -19,10 +19,9 @@ use super::{
     reserve_whitelist_operations,
 };
 use crate::{
-    kmsg, kmsg_sized,
-    operations::vault_operations::common::{get_shares_to_mint, holdings},
-    utils::consts::SECONDS_PER_YEAR,
-    xmsg, GlobalConfig, KaminoVaultError, ReserveWhitelistEntry, VaultState, MAX_RESERVES,
+    kmsg, kmsg_sized, operations::vault_operations::common::get_shares_to_mint,
+    utils::consts::SECONDS_PER_YEAR, xmsg, CtokenCap, GlobalConfig, KaminoVaultError,
+    ReserveWhitelistEntry, VaultState, MAX_RESERVES,
 };
 
 pub fn initialize(
@@ -52,6 +51,7 @@ pub fn deposit<'info, T>(
     vault: &mut VaultState,
     reserves_iter: impl Iterator<Item = T>,
     max_amount: u64,
+    min_shares_out: u64,
     current_timestamp: u64,
 ) -> Result<DepositEffects>
 where
@@ -67,8 +67,7 @@ where
 
     let raw_max_user_tokens_to_deposit = max_amount - crank_funds_to_deposit;
 
-    let holdings = holdings(vault, reserves_iter)?;
-
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
     kmsg!(
         "holdings available {} total invested {}",
         holdings.available,
@@ -118,6 +117,12 @@ where
         return err!(KaminoVaultError::DepositAmountsZeroShares);
     }
 
+    require_gte!(
+        shares_to_mint,
+        min_shares_out,
+        KaminoVaultError::SharesOutBelowMinimum
+    );
+
    
     common::deposit_into_vault(vault, user_tokens_to_deposit);
     common::mint_shares(vault, shares_to_mint);
@@ -135,7 +140,7 @@ where
 }
 
 struct VaultHoldingsAndCurrentAUM {
-    holdings: Holdings,
+    holdings: Box<Holdings>,
     current_vault_aum: Fraction,
 }
 
@@ -152,7 +157,7 @@ where
     T: AnyAccountLoader<'info, Reserve>,
 {
    
-    let holdings = holdings(vault, reserves_iter)?;
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
 
     charge_fees(vault, &holdings.invested, current_timestamp)?;
 
@@ -365,12 +370,10 @@ where
     refresh_rewards(vault, current_timestamp)?;
 
    
-    let Holdings {
-        invested,
-        available,
-        total_sum,
-    } = holdings(vault, reserves_iter)?;
-
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+    let invested = &holdings.invested;
+    let available = holdings.available;
+    let total_sum = holdings.total_sum;
     msg!(
         "holdings invested {:?} available {:?} total_sum {}",
         invested,
@@ -378,7 +381,7 @@ where
         total_sum.to_display()
     );
 
-    charge_fees(vault, &invested, current_timestamp)?;
+    charge_fees(vault, invested, current_timestamp)?;
 
     let total_fees = Fraction::from_bits(vault.pending_fees_sf);
 
@@ -448,8 +451,8 @@ where
     T: AnyAccountLoader<'info, Reserve>,
 {
     refresh_rewards(vault, current_timestamp)?;
-    let holdings = holdings(vault, reserves_iter)?;
-    msg!("holdings {:?}", holdings);
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+    holdings.log();
     let invested = &holdings.invested;
 
     charge_fees(vault, invested, current_timestamp)?;
@@ -472,9 +475,13 @@ where
 
     vault.last_fee_charge_timestamp = current_timestamp;
     let prev_aum = holdings.total_sum.saturating_sub(new_pending_fees);
-    msg!("holdings.total_sum {}", holdings.total_sum.to_display());
-    msg!("new_pending_fees {}", new_pending_fees.to_display());
-    msg!("prev_aum {}", prev_aum.to_display());
+    kmsg_sized!(
+        150,
+        "holdings.total_sum {}",
+        holdings.total_sum.to_display()
+    );
+    kmsg_sized!(150, "new_pending_fees {}", new_pending_fees.to_display());
+    kmsg_sized!(150, "prev_aum {}", prev_aum.to_display());
     common::update_prev_aum(vault, prev_aum);
 
     Ok(())
@@ -508,23 +515,52 @@ pub fn invest<'info, T>(
 where
     T: AnyAccountLoader<'info, Reserve>,
 {
+    let mut holdings_buffer = HoldingsBuffer::new();
+    let holdings = holdings_buffer.compute(vault, reserves_iter)?;
+    invest_with_holdings_snapshot(
+        vault,
+        reserve,
+        reserve_address,
+        current_slot,
+        current_timestamp,
+        reserve_whitelist_entry,
+        max_amount,
+        &holdings,
+    )
+}
+
+
+
+
+
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+pub fn invest_with_holdings_snapshot(
+    vault: &mut VaultState,
+    reserve: &Reserve,
+    reserve_address: &Pubkey,
+    current_slot: Slot,
+    current_timestamp: u64,
+    reserve_whitelist_entry: Option<&ReserveWhitelistEntry>,
+    max_amount: u64,
+    holdings: &Holdings,
+) -> Result<InvestEffects> {
     require!(
         max_amount > 0,
         KaminoVaultError::MaxInvestAmountMustBeGreaterThanZero
     );
 
-    let holdings = holdings(vault, reserves_iter)?;
     kmsg_sized!(50, "holdings available {}", holdings.available);
     kmsg_sized!(
         50,
         "holdings invested {}",
         holdings.invested.total.to_display()
     );
-    let invested = holdings.invested;
+    let invested = &holdings.invested;
 
-    charge_fees(vault, &invested, current_timestamp)?;
+    charge_fees(vault, invested, current_timestamp)?;
 
-    vault.refresh_target_allocations(&invested)?;
+    vault.refresh_target_allocations(invested)?;
 
     if !vault.is_allocated_to_reserve(*reserve_address) {
         return err!(KaminoVaultError::ReserveNotPartOfAllocations);
@@ -532,10 +568,11 @@ where
 
     let allocation_for_reserve = vault.allocation_for_reserve(reserve_address)?;
     kmsg!(
-        "alloc_for_reserve address {} weight {} cap {}",
+        "alloc_for_reserve address {} weight {} cap {} ctoken cap {}",
         allocation_for_reserve.reserve,
         allocation_for_reserve.target_allocation_weight,
-        allocation_for_reserve.token_allocation_cap
+        allocation_for_reserve.token_allocation_cap,
+        allocation_for_reserve.ctoken_allocation_cap().raw()
     );
 
     if current_slot < allocation_for_reserve.last_invest_slot + vault.min_invest_delay_slots {
@@ -955,9 +992,13 @@ pub mod common {
     use crate::{
         operations::klend_operations,
         utils::{cpi_mem::CpiMemoryLender, fraction_utils::full_mul_fraction_ratio_ceil},
+        VaultAllocation,
     };
 
     use super::*;
+
+    pub(crate) const HOLDINGS_DEBUG_LOG_CAPACITY: usize = 2000;
+    pub(crate) const HOLDINGS_DEBUG_LOG_MAX_ALLOCATIONS: usize = 7;
 
     pub fn get_max_depositable_in_vault(vault: &VaultState, holdings_aum: Fraction) -> u64 {
         let deposit_cap = if vault.deposit_cap == 0 {
@@ -1085,14 +1126,69 @@ pub mod common {
         Ok(shares_to_mint.to_floor())
     }
 
+    fn ctoken_cap_to_liquidity_or_uncapped(reserve: &Reserve, ctoken_cap: CtokenCap) -> Fraction {
+        if ctoken_cap.is_uncapped() {
+            return Fraction::from(u64::MAX);
+        }
+
+        reserve
+            .collateral_exchange_rate()
+            .saturating_fraction_collateral_to_liquidity(Fraction::from(ctoken_cap.raw()))
+    }
+
+
+
+
+
+
+    fn compute_invested_reserve(
+        allocation_state: &VaultAllocation,
+        reserve: &Reserve,
+    ) -> Result<InvestedReserve> {
+        let ctoken_amount = allocation_state.ctoken_allocation;
+        let exchange_rate = reserve.collateral_exchange_rate();
+
+        let liquidity_amount = exchange_rate
+            .checked_fraction_collateral_to_liquidity(ctoken_amount.into())
+            .ok_or(error!(KaminoVaultError::MathOverflow))?;
+        let ctoken_cap_in_liquidity =
+            ctoken_cap_to_liquidity_or_uncapped(reserve, allocation_state.ctoken_allocation_cap());
+
+        Ok(InvestedReserve {
+            reserve: allocation_state.reserve,
+            liquidity_amount,
+            ctoken_amount,
+            target_weight: allocation_state.target_allocation_weight,
+            ctoken_cap_in_liquidity,
+        })
+    }
+
     pub fn amounts_invested<'info, T>(
         vault: &VaultState,
-        mut reserves_iter: impl Iterator<Item = T>,
+        reserves_iter: impl Iterator<Item = T>,
     ) -> Result<Invested>
     where
         T: AnyAccountLoader<'info, Reserve>,
     {
         let mut invested = Invested::default();
+        amounts_invested_into(vault, reserves_iter, &mut invested)?;
+
+        Ok(invested)
+    }
+
+
+
+
+
+    fn amounts_invested_into<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+        invested: &mut Invested,
+    ) -> Result<()>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        invested.reset();
         let mut total = Fraction::ZERO;
 
         for (allocation_state, computed_invested_allocation) in vault
@@ -1118,53 +1214,170 @@ pub mod common {
                 return err!(KaminoVaultError::ReserveAccountAndKeyMismatch);
             }
 
-            let ctoken_amount = allocation_state.ctoken_allocation;
-
-           
-            let liquidity_amount = reserve
-                .collateral_exchange_rate()
-                .fraction_collateral_to_liquidity(ctoken_amount.into());
-
-            computed_invested_allocation.reserve = allocation_state.reserve;
-            computed_invested_allocation.liquidity_amount = liquidity_amount;
-            computed_invested_allocation.ctoken_amount = ctoken_amount;
-            computed_invested_allocation.target_weight = allocation_state.target_allocation_weight;
-
-            total += liquidity_amount;
+            let computed_invested_reserve = compute_invested_reserve(allocation_state, &reserve)?;
+            total += computed_invested_reserve.liquidity_amount;
+            *computed_invested_allocation = computed_invested_reserve;
         }
 
         invested.total = total;
 
-        Ok(invested)
+        Ok(())
     }
 
-    pub fn holdings<'info, T>(
-        vault: &VaultState,
-        reserves_iter: impl Iterator<Item = T>,
-    ) -> Result<Holdings>
-    where
-        T: AnyAccountLoader<'info, Reserve>,
-    {
-        let (available, invested) = underlying_inventory(vault, reserves_iter)?;
-        let total_sum = Fraction::from(available) + invested.total;
 
-        Ok(Holdings {
-            available,
-            invested,
-            total_sum,
-        })
+
+
+
+    fn recompute_invested_reserve_into(
+        vault: &VaultState,
+        reserve_address: &Pubkey,
+        reserve: &Reserve,
+        invested: &mut Invested,
+    ) -> Result<()> {
+        let Some(reserve_idx) = vault.get_reserve_idx_in_allocation(reserve_address) else {
+            return err!(KaminoVaultError::ReserveNotPartOfAllocations);
+        };
+        let allocation_state = &vault.vault_allocation_strategy[reserve_idx];
+        let computed_invested_allocation = &mut invested.allocations[reserve_idx];
+        let previous_liquidity_amount = computed_invested_allocation.liquidity_amount;
+        let computed_invested_reserve = compute_invested_reserve(allocation_state, reserve)?;
+
+        invested.total =
+            invested.total - previous_liquidity_amount + computed_invested_reserve.liquidity_amount;
+        *computed_invested_allocation = computed_invested_reserve;
+
+        Ok(())
     }
 
-    pub fn underlying_inventory<'info, T>(
+    pub struct SyncedHoldingsTotals {
+
+        pub aum: Fraction,
+
+        pub total_sum: Fraction,
+    }
+
+
+
+
+
+
+
+
+    #[derive(Default)]
+    pub struct HoldingsBuffer {
+        storage: Box<Holdings>,
+    }
+
+    impl HoldingsBuffer {
+
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+
+
+
+
+
+
+        pub fn compute<'a, 'info, T>(
+            &'a mut self,
+            vault: &VaultState,
+            reserves_iter: impl Iterator<Item = T>,
+        ) -> Result<ComputedHoldings<'a>>
+        where
+            T: AnyAccountLoader<'info, Reserve>,
+        {
+            let holdings = &mut *self.storage;
+            holdings.available =
+                underlying_inventory_into(vault, reserves_iter, &mut holdings.invested)?;
+            holdings.total_sum = Fraction::from(holdings.available) + holdings.invested.total;
+
+            Ok(ComputedHoldings { holdings })
+        }
+
+
+
+
+
+        pub fn compute_once<'info, T>(
+            vault: &VaultState,
+            reserves_iter: impl Iterator<Item = T>,
+        ) -> Result<Box<Holdings>>
+        where
+            T: AnyAccountLoader<'info, Reserve>,
+        {
+            let mut buffer = Self::new();
+            buffer.compute(vault, reserves_iter)?;
+            Ok(buffer.storage)
+        }
+    }
+
+
+
+
+
+
+
+
+    pub struct ComputedHoldings<'a> {
+        holdings: &'a mut Holdings,
+    }
+
+    impl core::ops::Deref for ComputedHoldings<'_> {
+        type Target = Holdings;
+
+        fn deref(&self) -> &Self::Target {
+            self.holdings
+        }
+    }
+
+    impl ComputedHoldings<'_> {
+
+
+
+
+
+
+        pub fn sync_reserve(
+            &mut self,
+            vault: &VaultState,
+            reserve_address: &Pubkey,
+            reserve: &Reserve,
+        ) -> Result<SyncedHoldingsTotals> {
+            recompute_invested_reserve_into(
+                vault,
+                reserve_address,
+                reserve,
+                &mut self.holdings.invested,
+            )?;
+            self.holdings.available = vault.token_available;
+            self.holdings.total_sum =
+                Fraction::from(self.holdings.available) + self.holdings.invested.total;
+
+            Ok(SyncedHoldingsTotals {
+                aum: vault.compute_aum(&self.holdings.invested.total)?,
+                total_sum: self.holdings.total_sum,
+            })
+        }
+    }
+
+
+
+
+
+    fn underlying_inventory_into<'info, T>(
         vault: &VaultState,
         reserves_iter: impl Iterator<Item = T>,
-    ) -> Result<(u64, Invested)>
+        invested: &mut Invested,
+    ) -> Result<u64>
     where
         T: AnyAccountLoader<'info, Reserve>,
     {
         let available = available_to_invest(vault);
-        let invested = amounts_invested(vault, reserves_iter)?;
-        Ok((available, invested))
+        amounts_invested_into(vault, reserves_iter, invested)?;
+
+        Ok(available)
     }
 
     pub fn available_to_invest(vault: &VaultState) -> u64 {
@@ -1381,14 +1594,39 @@ pub mod common {
         vault.available_crank_funds += amount;
     }
 
-    #[derive(Clone)]
+    #[repr(C)]
+    #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
     pub struct Holdings {
         pub available: u64,
+        alignment_padding: u64,
         pub invested: Invested,
         pub total_sum: Fraction,
     }
 
-    impl Debug for Holdings {
+    impl Holdings {
+
+        pub fn log(&self) {
+           
+           
+            if self.invested.populated_allocation_count() <= HOLDINGS_DEBUG_LOG_MAX_ALLOCATIONS {
+                self.log_debug();
+            } else {
+                self.log_data();
+            }
+        }
+
+        #[inline(never)]
+        fn log_debug(&self) {
+            kmsg_sized!(HOLDINGS_DEBUG_LOG_CAPACITY, "holdings {:?}", self);
+        }
+
+        #[inline(never)]
+        fn log_data(&self) {
+            solana_program::log::sol_log_data(&[bytemuck::bytes_of(self)]);
+        }
+    }
+
+    impl fmt::Debug for Holdings {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("Holdings")
                 .field("available", &self.available)
@@ -1398,12 +1636,14 @@ pub mod common {
         }
     }
 
-    #[derive(Default, Clone)]
+    #[repr(C)]
+    #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
     pub struct InvestedReserve {
         pub reserve: Pubkey,
         pub liquidity_amount: Fraction,
         pub ctoken_amount: u64,
         pub target_weight: u64,
+        pub ctoken_cap_in_liquidity: Fraction,
     }
 
     impl fmt::Debug for InvestedReserve {
@@ -1413,33 +1653,60 @@ pub mod common {
                 .field("liquidity_amount", &self.liquidity_amount.to_display())
                 .field("ctoken_amount", &self.ctoken_amount)
                 .field("target_weight", &self.target_weight)
+                .field(
+                    "ctoken_cap_in_liquidity",
+                    &self.ctoken_cap_in_liquidity.to_display(),
+                )
                 .finish()
         }
     }
 
-    #[derive(Default, Clone)]
+    #[repr(C)]
+    #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
     pub struct Invested {
-        pub allocations: Box<[InvestedReserve; MAX_RESERVES]>,
+        pub allocations: [InvestedReserve; MAX_RESERVES],
         pub total: Fraction,
+    }
+
+    struct InvestedAllocationsDebug<'a>(&'a Invested);
+
+    impl fmt::Debug for InvestedAllocationsDebug<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_list()
+                .entries(self.0.populated_allocations())
+                .finish()
+        }
     }
 
     impl fmt::Debug for Invested {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            let allocations_filtered: Vec<InvestedReserve> = self
-                .allocations
-                .iter()
-                .filter(|i| i.reserve != Pubkey::default())
-                .cloned()
-                .collect();
-
             f.debug_struct("")
                 .field("total", &self.total.to_display())
-                .field("allocations", &allocations_filtered)
+                .field("allocations", &InvestedAllocationsDebug(self))
                 .finish()
         }
     }
 
     impl Invested {
+        fn populated_allocations(&self) -> impl Iterator<Item = &InvestedReserve> {
+            let default_reserve = Pubkey::default();
+
+            self.allocations
+                .iter()
+                .filter(move |allocation| allocation.reserve != default_reserve)
+        }
+
+        fn populated_allocation_count(&self) -> usize {
+            self.populated_allocations().count()
+        }
+
+        pub fn reset(&mut self) {
+            self.total = Fraction::ZERO;
+            for allocation in self.allocations.iter_mut() {
+                *allocation = InvestedReserve::default();
+            }
+        }
+
         pub fn in_reserve(&self, reserve: &Pubkey) -> &InvestedReserve {
             self.allocations
                 .iter()

@@ -167,9 +167,19 @@ disc!(
     "deposit"
 );
 disc!(
+    /// Discriminator for the `deposit_with_min_shares_out` instruction.
+    DEPOSIT_WITH_MIN_SHARES_OUT,
+    "deposit_with_min_shares_out"
+);
+disc!(
     /// Discriminator for the `buy` instruction.
     BUY,
     "buy"
+);
+disc!(
+    /// Discriminator for the `buy_with_min_shares_out` instruction.
+    BUY_WITH_MIN_SHARES_OUT,
+    "buy_with_min_shares_out"
 );
 
 disc!(
@@ -211,8 +221,12 @@ disc!(
 pub enum KvaultInstruction {
     /// Deposit tokens into a vault and receive shares.
     Deposit,
+    /// Deposit tokens into a vault with a minimum shares-out guard.
+    DepositWithMinSharesOut,
     /// Buy vault shares (same accounts as deposit, different discriminator).
     Buy,
+    /// Buy vault shares with a minimum shares-out guard.
+    BuyWithMinSharesOut,
     /// Withdraw from available and invested liquidity via a reserve.
     Withdraw,
     /// Sell vault shares (same accounts as withdraw, different discriminator).
@@ -246,7 +260,9 @@ pub fn identify_instruction(data: &[u8]) -> Option<KvaultInstruction> {
 
     match disc {
         d if d == DEPOSIT => Some(KvaultInstruction::Deposit),
+        d if d == DEPOSIT_WITH_MIN_SHARES_OUT => Some(KvaultInstruction::DepositWithMinSharesOut),
         d if d == BUY => Some(KvaultInstruction::Buy),
+        d if d == BUY_WITH_MIN_SHARES_OUT => Some(KvaultInstruction::BuyWithMinSharesOut),
         d if d == WITHDRAW => Some(KvaultInstruction::Withdraw),
         d if d == SELL => Some(KvaultInstruction::Sell),
         d if d == WITHDRAW_FROM_AVAILABLE => Some(KvaultInstruction::WithdrawFromAvailable),
@@ -275,7 +291,9 @@ mod tests {
     #[test]
     fn verify_all_discriminators() {
         check_disc!("deposit", DEPOSIT);
+        check_disc!("deposit_with_min_shares_out", DEPOSIT_WITH_MIN_SHARES_OUT);
         check_disc!("buy", BUY);
+        check_disc!("buy_with_min_shares_out", BUY_WITH_MIN_SHARES_OUT);
         check_disc!("withdraw", WITHDRAW);
         check_disc!("sell", SELL);
         check_disc!("withdraw_from_available", WITHDRAW_FROM_AVAILABLE);

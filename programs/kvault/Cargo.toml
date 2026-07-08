@@ -1,6 +1,6 @@
 [package]
 name = "kamino_vault"
-version = "2.2.1"
+version = "2.2.2"
 description = "Kamino lending vault Solana program"
 edition = "2021"
 license = "BUSL-1.1"
@@ -48,7 +48,7 @@ uint = "0.9.5"
 arrform = "0.1.1"
 kamino_lending = { git = "https://github.com/Kamino-Finance/klend.git", features = [
     "no-entrypoint",
-], tag = "release/v1.21.0"}
+]}
 
 # Only required when serializing to market config to JSON and in tests
 serde = { workspace = true, optional = true }

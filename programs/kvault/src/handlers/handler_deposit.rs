@@ -17,6 +17,7 @@ use crate::{
 pub fn process<'info>(
     ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
     max_amount: u64,
+    min_shares_out: u64,
 ) -> Result<()> {
    
     require!(max_amount > 0, KaminoVaultError::DepositAmountsZero);
@@ -37,6 +38,7 @@ pub fn process<'info>(
 
     let user_initial_shares_balance = ctx.accounts.user_shares_ata.amount;
     let user_intial_ata_balance = ctx.accounts.user_token_ata.amount;
+    let vault_token_balance_before = ctx.accounts.token_vault.amount;
     let initial_vault_shares_issued = vault_state.shares_issued;
     emit_cpi!(DepositUserAtaBalanceEvent {
         user_ata_balance: user_intial_ata_balance,
@@ -50,13 +52,18 @@ pub fn process<'info>(
         vault_state,
         reserves_iter,
         max_amount,
+        min_shares_out,
         clock.unix_timestamp.try_into().unwrap(),
     )?;
+
     emit_cpi!(DepositResultEvent {
         shares_to_mint,
         token_to_deposit,
         crank_funds_to_deposit,
     });
+    let total_token_to_deposit = token_to_deposit
+        .checked_add(crank_funds_to_deposit)
+        .ok_or(KaminoVaultError::MathOverflow)?;
 
    
     token_ops::tokens::transfer_to_vault(
@@ -67,7 +74,7 @@ pub fn process<'info>(
             token_vault: ctx.accounts.token_vault.to_account_info(),
             token_mint: ctx.accounts.token_mint.to_account_info(),
         },
-        token_to_deposit + crank_funds_to_deposit,
+        total_token_to_deposit,
         ctx.accounts.token_mint.decimals,
     )?;
 
@@ -86,9 +93,10 @@ pub fn process<'info>(
     let user_ata_balance_after = amount(&ctx.accounts.user_token_ata.to_account_info())?;
     let user_shares_balance_after = amount(&ctx.accounts.user_shares_ata.to_account_info())?;
     let user_shares_gained = user_shares_balance_after - user_initial_shares_balance;
+    let vault_token_balance_after = amount(&ctx.accounts.token_vault.to_account_info())?;
 
     require!(
-        token_to_deposit + crank_funds_to_deposit <= max_amount,
+        total_token_to_deposit <= max_amount,
         KaminoVaultError::DepositAmountGreaterThanRequestedAmount
     );
     require!(
@@ -97,8 +105,12 @@ pub fn process<'info>(
     );
 
     require!(
-        user_intial_ata_balance - token_to_deposit - crank_funds_to_deposit
-            == user_ata_balance_after,
+        user_intial_ata_balance - total_token_to_deposit == user_ata_balance_after,
+        KaminoVaultError::TokensDepositedAmountDoesNotMatch,
+    );
+
+    require!(
+        vault_token_balance_after == vault_token_balance_before + total_token_to_deposit,
         KaminoVaultError::TokensDepositedAmountDoesNotMatch,
     );
 

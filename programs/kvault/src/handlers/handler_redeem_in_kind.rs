@@ -12,7 +12,7 @@ use crate::{
     operations::{
         effects::RedeemInKindEffects,
         vault_checks::{post_redeem_in_kind_checks, RedeemInKindPostCheckAmounts},
-        vault_operations::{self, common::underlying_inventory},
+        vault_operations::{self, common::HoldingsBuffer},
     },
     utils::{
         consts::{CTOKEN_VAULT_SEED, GLOBAL_CONFIG_STATE_SEEDS},
@@ -137,8 +137,8 @@ fn calculate_vault_aum<'a>(
     vault_state: &VaultState,
     reserves_iter: impl Iterator<Item = impl AnyAccountLoader<'a, Reserve>>,
 ) -> Result<Fraction> {
-    let (_, invested) = underlying_inventory(vault_state, reserves_iter)?;
-    let vault_aum = vault_state.compute_aum(&invested.total)?;
+    let holdings = HoldingsBuffer::compute_once(vault_state, reserves_iter)?;
+    let vault_aum = vault_state.compute_aum(&holdings.invested.total)?;
     Ok(vault_aum)
 }
 

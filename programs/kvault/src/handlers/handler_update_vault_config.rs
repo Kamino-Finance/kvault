@@ -5,7 +5,7 @@ use crate::{
         vault_config_operations::{
             self, check_if_signer_allowed_to_update_vault_config, VaultConfigField,
         },
-        vault_operations::{self, common::holdings},
+        vault_operations::{self, common::HoldingsBuffer},
     },
     utils::{consts::GLOBAL_CONFIG_STATE_SEEDS, cpi_mem::CpiMemoryLender},
     GlobalConfig, VaultState,
@@ -39,8 +39,8 @@ pub fn process<'info>(
     let current_ts: u64 = clock.unix_timestamp.try_into().unwrap();
    
     vault_operations::refresh_rewards(vault, current_ts)?;
-    let holdings = holdings(vault, reserves_iter)?;
-    msg!("holdings {:?}", holdings);
+    let holdings = HoldingsBuffer::compute_once(vault, reserves_iter)?;
+    holdings.log();
    
     vault_operations::charge_fees(vault, &holdings.invested, current_ts)?;
 

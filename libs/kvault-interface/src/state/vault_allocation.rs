@@ -17,8 +17,14 @@ pub struct VaultAllocation {
     pub token_allocation_cap: u64,
     /// Bump seed for the [`ctoken_vault`](Self::ctoken_vault) PDA.
     pub ctoken_vault_bump: u64,
+    /// Maximum cTokens that can be invested in this reserve.
+    ///
+    /// `0` and `u64::MAX` mean uncapped. For finite values, the
+    /// effective token-denominated cap is
+    /// `min(token_allocation_cap, ctoken_allocation_cap * reserve_exchange_rate)`.
+    pub ctoken_allocation_cap: u64,
     /// Reserved for future configuration fields.
-    pub config_padding: [u64; 127],
+    pub config_padding: [u64; 126],
     /// Current cToken balance invested in this reserve.
     pub ctoken_allocation: u64,
     /// Slot number of the last invest call for this reserve.

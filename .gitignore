@@ -5,4 +5,5 @@ target
 node_modules
 test-ledger
 .vscode/
+.idea/
 .cargo/

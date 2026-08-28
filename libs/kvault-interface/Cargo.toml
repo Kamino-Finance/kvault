@@ -24,6 +24,8 @@ solana-account = "2.1"
 solana-system-interface = { version = "1.0.0", features = ["bincode"] }
 spl-token = "7"
 spl-associated-token-account = "6"
+solana-account-decoder-client-types = "2.3"
+uint = "0.9"
 
 [profile.ci]
 inherits = "dev"

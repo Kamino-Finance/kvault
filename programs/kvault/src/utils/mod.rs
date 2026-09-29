@@ -5,4 +5,5 @@ pub mod global_config;
 pub mod macros;
 pub mod metadata;
 pub mod pda;
+pub mod permissioning_authority;
 pub mod token_ops;

@@ -17,6 +17,7 @@ use crate::{
     utils::{
         consts::{CTOKEN_VAULT_SEED, GLOBAL_CONFIG_STATE_SEEDS},
         cpi_mem::CpiMemoryLender,
+        permissioning_authority::check_permissioning_authority_and_strip,
         token_ops::{shares, tokens},
     },
     GlobalConfig, VaultState,
@@ -28,17 +29,17 @@ pub fn redeem_in_kind<'info>(
 ) -> Result<()> {
     let all_accounts = ctx.accounts.to_account_infos();
 
-    let mut cpi_mem =
-        CpiMemoryLender::build_cpi_memory_lender(all_accounts, ctx.remaining_accounts);
-
     let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
+    let remaining_accounts =
+        check_permissioning_authority_and_strip(vault_state, ctx.remaining_accounts)?;
+    let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender(all_accounts, remaining_accounts);
     let global_config = &ctx.accounts.global_config.load()?;
     let clock = Clock::get()?;
 
     let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
         &mut cpi_mem,
         vault_state,
-        ctx.remaining_accounts,
+        remaining_accounts,
         clock.slot,
     )?;
 
@@ -203,5 +204,7 @@ pub struct RedeemInKind<'info> {
     // This context has remaining accounts:
     // - All reserves entries of this vault
     // - All of the associated lending market accounts
+    // - The configured vault permissioning authority as the final account; it must sign
+    //   Omit this account when permissioning_authority is Pubkey::default().
     // They are dynamically sized and ordered and cannot be declared here upfront
 }

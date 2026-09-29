@@ -415,6 +415,9 @@ pub enum KaminoVaultError {
 
     #[msg("Shares out is below minimum requested")]
     SharesOutBelowMinimum,
+
+    #[msg("Invalid permissioning authority")]
+    InvalidPermissioningAuthority,
 }
 
 pub type KaminoVaultResult<T = ()> = std::result::Result<T, KaminoVaultError>;

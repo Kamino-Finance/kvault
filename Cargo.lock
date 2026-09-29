@@ -1391,8 +1391,8 @@ dependencies = [
 
 [[package]]
 name = "kamino_lending"
-version = "1.23.0"
-source = "git+https://github.com/Kamino-Finance/klend.git#c06001927d68895be487482bdd82dcf6e88e6348"
+version = "1.25.0"
+source = "git+https://github.com/Kamino-Finance/klend.git#a08760976f51a3a58c4a0c6ea27b4a0e565bca79"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1418,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "kamino_vault"
-version = "2.2.2"
+version = "2.3.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",

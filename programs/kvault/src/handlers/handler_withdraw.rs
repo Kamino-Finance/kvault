@@ -17,6 +17,7 @@ use crate::{
     utils::{
         consts::{CTOKEN_VAULT_SEED, GLOBAL_CONFIG_STATE_SEEDS},
         cpi_mem::CpiMemoryLender,
+        permissioning_authority::check_permissioning_authority_and_strip,
         token_ops::{self, shares},
     },
     GlobalConfig, KaminoVaultError, VaultState,
@@ -70,6 +71,8 @@ pub struct Withdraw<'info> {
     // This context (list of accounts) has a lot of remaining accounts,
     // - All reserves entries of this vault
     // - All of the associated lending market accounts
+    // - The configured vault permissioning authority as the final account; it must sign
+    //   Omit this account when permissioning_authority is Pubkey::default().
     // They are dynamically sized and ordered and cannot be declared here upfront
 }
 
@@ -160,6 +163,8 @@ pub struct WithdrawFromAvailable<'info> {
     // For withdraw from available this context (list of accounts) has a lot of remaining accounts,
     // - All reserves entries of this vault
     // - All of the associated lending market accounts
+    // - The configured vault permissioning authority as the final account; it must sign
+    //   Omit this account when permissioning_authority is Pubkey::default().
     // They are dynamically sized and ordered and cannot be declared here upfront
 }
 
@@ -183,11 +188,12 @@ pub mod withdraw_utils {
             all_accounts.extend_from_slice(&ctx_withdraw_from_reserves.unwrap().to_account_infos());
         }
 
-        let mut cpi_mem =
-            CpiMemoryLender::build_cpi_memory_lender(all_accounts, remaining_accounts);
-
         let vault_state: &mut std::cell::RefMut<'_, VaultState> =
             &mut withdraw_from_available_accounts.vault_state.load_mut()?;
+        let remaining_accounts =
+            check_permissioning_authority_and_strip(vault_state, remaining_accounts)?;
+        let mut cpi_mem =
+            CpiMemoryLender::build_cpi_memory_lender(all_accounts, remaining_accounts);
         let global_config = &withdraw_from_available_accounts.global_config.load()?;
         let clock = Clock::get()?;
 

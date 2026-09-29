@@ -9,6 +9,7 @@ use crate::{
     operations::{effects::DepositEffects, vault_operations},
     utils::{
         cpi_mem::CpiMemoryLender,
+        permissioning_authority::check_permissioning_authority_and_strip,
         token_ops::{self, shares, tokens::UserTransferAccounts},
     },
     KaminoVaultError, VaultState,
@@ -22,17 +23,19 @@ pub fn process<'info>(
    
     require!(max_amount > 0, KaminoVaultError::DepositAmountsZero);
 
+    let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
+    let remaining_accounts =
+        check_permissioning_authority_and_strip(vault_state, ctx.remaining_accounts)?;
     let mut cpi_mem = CpiMemoryLender::build_cpi_memory_lender(
         ctx.accounts.to_account_infos(),
-        ctx.remaining_accounts,
+        remaining_accounts,
     );
-    let vault_state = &mut ctx.accounts.vault_state.load_mut()?;
     let clock = Clock::get()?;
 
     let reserves_iter = vault_operations::common::refresh_allocation_reserve_accounts(
         &mut cpi_mem,
         vault_state,
-        ctx.remaining_accounts,
+        remaining_accounts,
         clock.slot,
     )?;
 
@@ -166,5 +169,7 @@ pub struct Deposit<'info> {
     // This context (list of accounts) has a lot of remaining accounts,
     // - All reserves entries of this vault
     // - All of the associated lending market accounts
+    // - The configured vault permissioning authority as the final account; it must sign
+    //   Omit this account when permissioning_authority is Pubkey::default().
     // They are dynamically sized and ordered and cannot be declared here upfront
 }

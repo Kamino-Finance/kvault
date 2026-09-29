@@ -85,7 +85,8 @@ pub struct VaultState {
     pub deposit_cap: u64,
     pub reward_info: VaultRewardInfo,
 
-    pub padding_3: [u128; 232],
+    pub permissioning_authority: Pubkey,
+    pub padding_3: [u128; 230],
 }
 
 impl Default for VaultState {

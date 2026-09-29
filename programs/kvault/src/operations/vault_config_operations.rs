@@ -35,6 +35,7 @@ pub enum VaultConfigField {
     AllowInvestInWhitelistedReservesOnly,
     RewardPerSecond,
     DepositCap,
+    PermissioningAuthority,
 }
 
 pub fn check_if_signer_allowed_to_update_vault_config(
@@ -68,7 +69,8 @@ pub fn check_if_signer_allowed_to_update_vault_config(
         | VaultConfigField::LookupTable
         | VaultConfigField::Name
         | VaultConfigField::Farm
-        | VaultConfigField::DepositCap => {
+        | VaultConfigField::DepositCap
+        | VaultConfigField::PermissioningAuthority => {
             require!(
                 is_global_admin || is_vault_admin,
                 KaminoVaultError::AdminAuthorityIncorrect
@@ -270,6 +272,12 @@ pub fn update_vault_config(
             msg!("Prv value is {:?}", vault.deposit_cap);
             msg!("New value is {:?}", value);
             vault.deposit_cap = value;
+        }
+        VaultConfigField::PermissioningAuthority => {
+            let pubkey: Pubkey = BorshDeserialize::try_from_slice(data)?;
+            msg!("Prv value is {:?}", vault.permissioning_authority);
+            msg!("New value is {:?}", pubkey);
+            vault.permissioning_authority = pubkey;
         }
     }
     Ok(())

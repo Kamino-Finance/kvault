@@ -117,8 +117,10 @@ pub struct VaultState {
     pub deposit_cap: u64,
     /// Reward distribution state ([`VaultRewardInfo`]).
     pub reward_info: VaultRewardInfo,
+    /// Additional signer required for user deposits and withdrawals; default disables it.
+    pub permissioning_authority: Pubkey,
     /// Reserved for future use.
-    pub padding_3: [PodU128; 232],
+    pub padding_3: [PodU128; 230],
 }
 
 const _: () = assert!(core::mem::size_of::<VaultState>() == 62544);

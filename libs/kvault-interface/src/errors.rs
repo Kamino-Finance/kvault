@@ -203,8 +203,10 @@ define_kvault_errors! {
     VaultDepositCapReached = 1062 => "Vault deposit cap reached",
     /// Max invest amount must be greater than zero.
     MaxInvestAmountMustBeGreaterThanZero = 1063 => "max_amount must be greater than 0",
-        /// Shares minted are below the requested minimum.
+    /// Shares minted are below the requested minimum.
     SharesOutBelowMinimum = 1064 => "Shares out is below minimum requested",
+    /// Missing or incorrect configured permissioning authority.
+    InvalidPermissioningAuthority = 1065 => "Invalid permissioning authority",
 }
 
 impl std::error::Error for KvaultError {}

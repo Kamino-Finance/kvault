@@ -60,7 +60,11 @@
 //! let vault = VaultInfo::from_account_data(vault_pubkey, &vault_data.data, &reserve_infos)?;
 //!
 //! // 2. Derive user token accounts
-//! let user_token_ata = spl_associated_token_account::get_associated_token_address(&owner, &vault.token_mint);
+//! let user_token_ata = spl_associated_token_account::get_associated_token_address_with_program_id(
+//!     &owner,
+//!     &vault.token_mint,
+//!     &vault.token_program,
+//! );
 //! let shares_mint = kvault_interface::pda::shares_mint(&KVAULT_PROGRAM_ID, &vault_pubkey).0;
 //! let user_shares_ata = spl_associated_token_account::get_associated_token_address(&owner, &shares_mint);
 //!

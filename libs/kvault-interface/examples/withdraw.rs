@@ -21,9 +21,7 @@ use kvault_interface::{
 use solana_client::rpc_client::RpcClient;
 use solana_pubkey::Pubkey;
 use solana_sdk::signer::{keypair::read_keypair_file, Signer};
-use spl_associated_token_account::{
-    get_associated_token_address, get_associated_token_address_with_program_id,
-};
+use spl_associated_token_account::get_associated_token_address;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_client = RpcClient::new("https://api.mainnet-beta.solana.com");
@@ -62,11 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- 2. Derive user token accounts ------------------------------------------------------
 
-    let user_token_ata = get_associated_token_address_with_program_id(
-        &owner,
-        &vault.token_mint,
-        &vault.token_program,
-    );
+    let user_token_ata = get_associated_token_address(&owner, &vault.token_mint);
     let (shares_mint, _) = pda::shares_mint(&KVAULT_PROGRAM_ID, &vault_pubkey);
     let user_shares_ata = get_associated_token_address(&owner, &shares_mint);
 

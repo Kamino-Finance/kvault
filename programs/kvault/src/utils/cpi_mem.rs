@@ -99,6 +99,13 @@ impl<'info> CpiMemoryLender<'info> {
         self.program_invoke_signed(program_id, ix_accounts, ix_data, &[])
     }
 
+    pub(crate) fn account_info(&self, key: &Pubkey) -> Option<AccountInfo<'info>> {
+        self.accounts_infos
+            .iter()
+            .find(|account_info| account_info.key == key)
+            .cloned()
+    }
+
     pub fn program_invoke_signed(
         &mut self,
         program_id: &Pubkey,

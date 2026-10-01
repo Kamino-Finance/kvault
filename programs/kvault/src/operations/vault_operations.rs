@@ -1022,17 +1022,34 @@ pub mod common {
         'info: 'a,
     {
         let reserves_count = vault.get_reserves_count();
-        let reserves_iter = allocation_reserve_accounts_iter(remaining_accounts, reserves_count);
+        let checked_reserves_iter =
+            checked_allocation_reserve_accounts_iter(remaining_accounts, reserves_count);
 
-        check_allocation_reserve_accounts_match(vault, reserves_iter.clone())?;
+        check_allocation_reserve_accounts_match(vault, checked_reserves_iter.clone())?;
         klend_operations::cpi_refresh_reserves(
             cpi_mem,
             remaining_accounts.iter().take(reserves_count),
             reserves_count,
         )?;
-        check_matched_allocation_reserves_refreshed(vault, reserves_iter.clone(), slot)?;
+        check_matched_allocation_reserves_refreshed(vault, checked_reserves_iter, slot)?;
 
-        Ok(reserves_iter)
+        Ok(allocation_reserve_accounts_iter(
+            remaining_accounts,
+            reserves_count,
+        ))
+    }
+
+    fn checked_allocation_reserve_accounts_iter<'a, 'info>(
+        remaining_accounts: &'a [AccountInfo<'info>],
+        reserves_count: usize,
+    ) -> impl Iterator<Item = Result<FatAccountLoader<'info, Reserve>>> + Clone + 'a
+    where
+        'info: 'a,
+    {
+        remaining_accounts
+            .iter()
+            .take(reserves_count)
+            .map(FatAccountLoader::<Reserve>::try_from)
     }
 
     fn allocation_reserve_accounts_iter<'a, 'info>(
@@ -1050,7 +1067,7 @@ pub mod common {
 
     pub(crate) fn check_allocation_reserve_accounts_match<'info, T>(
         vault: &VaultState,
-        mut reserves_iter: impl Iterator<Item = T>,
+        mut reserves_iter: impl Iterator<Item = Result<T>>,
     ) -> Result<()>
     where
         T: AnyAccountLoader<'info, Reserve>,
@@ -1060,7 +1077,7 @@ pub mod common {
                 continue;
             }
 
-            let Some(reserve) = reserves_iter.next() else {
+            let Some(reserve) = reserves_iter.next().transpose()? else {
                 return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
             };
 
@@ -1074,7 +1091,7 @@ pub mod common {
 
     pub(crate) fn check_matched_allocation_reserves_refreshed<'info, T>(
         vault: &VaultState,
-        mut reserves_iter: impl Iterator<Item = T>,
+        mut reserves_iter: impl Iterator<Item = Result<T>>,
         slot: Slot,
     ) -> Result<()>
     where
@@ -1085,7 +1102,7 @@ pub mod common {
                 continue;
             }
 
-            let Some(reserve) = reserves_iter.next() else {
+            let Some(reserve) = reserves_iter.next().transpose()? else {
                 return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
             };
 

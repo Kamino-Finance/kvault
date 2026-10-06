@@ -1241,6 +1241,39 @@ pub mod common {
         Ok(())
     }
 
+    fn amounts_invested_total<'info, T>(
+        vault: &VaultState,
+        mut reserves_iter: impl Iterator<Item = T>,
+    ) -> Result<Fraction>
+    where
+        T: AnyAccountLoader<'info, Reserve>,
+    {
+        let mut total = Fraction::ZERO;
+
+        for allocation_state in vault.vault_allocation_strategy.iter() {
+            if allocation_state.reserve == Pubkey::default() {
+                continue;
+            }
+
+            let Some(reserve) = reserves_iter.next() else {
+                return err!(KaminoVaultError::ReserveNotProvidedInTheAccounts);
+            };
+            let reserve_key = reserve.get_pubkey();
+
+            let reserve = reserve
+                .get()
+                .map_err(|_| error!(KaminoVaultError::CouldNotDeserializeAccountAsReserve))?;
+
+            if reserve_key != allocation_state.reserve {
+                return err!(KaminoVaultError::ReserveAccountAndKeyMismatch);
+            }
+
+            total += compute_invested_reserve(allocation_state, &reserve)?.liquidity_amount;
+        }
+
+        Ok(total)
+    }
+
 
 
 
@@ -1395,6 +1428,15 @@ pub mod common {
         amounts_invested_into(vault, reserves_iter, invested)?;
 
         Ok(available)
+    }
+
+    pub fn aum<'info, T: AnyAccountLoader<'info, Reserve>>(
+        vault: &VaultState,
+        reserves_iter: impl Iterator<Item = T>,
+        _slot: Slot,
+    ) -> Result<Fraction> {
+        let invested_total = amounts_invested_total(vault, reserves_iter)?;
+        vault.compute_aum(&invested_total)
     }
 
     pub fn available_to_invest(vault: &VaultState) -> u64 {

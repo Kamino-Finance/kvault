@@ -5,14 +5,14 @@ use anchor_spl::{
     token::Token,
     token_interface::{accessor::amount, Mint, TokenAccount},
 };
-use kamino_lending::{fraction::Fraction, utils::AnyAccountLoader, Reserve};
+use kamino_lending::{fraction::Fraction, Reserve};
 
 use crate::{
     events::{RedeemInKindResultEvent, SharesToWithdrawEvent},
     operations::{
         effects::RedeemInKindEffects,
         vault_checks::{post_redeem_in_kind_checks, RedeemInKindPostCheckAmounts},
-        vault_operations::{self, common::HoldingsBuffer},
+        vault_operations::{self, common::aum},
     },
     utils::{
         consts::{CTOKEN_VAULT_SEED, GLOBAL_CONFIG_STATE_SEEDS},
@@ -105,7 +105,7 @@ pub fn redeem_in_kind<'info>(
         ctx.accounts.ctoken_mint.decimals,
     )?;
 
-    let vault_aum_after = calculate_vault_aum(vault_state, reserves_iter.clone())?;
+    let vault_aum_after = aum(vault_state, reserves_iter.clone(), clock.slot)?;
     let amounts_after = collect_post_check_amounts(ctx.accounts, &vault_aum_after)?;
     post_redeem_in_kind_checks(
         &amounts_before,
@@ -131,16 +131,6 @@ fn collect_post_check_amounts(
         user_ctoken_balance: amount(&accounts.user_ctoken_ta.to_account_info())?,
         vault_aum: *vault_aum,
     })
-}
-
-
-fn calculate_vault_aum<'a>(
-    vault_state: &VaultState,
-    reserves_iter: impl Iterator<Item = impl AnyAccountLoader<'a, Reserve>>,
-) -> Result<Fraction> {
-    let holdings = HoldingsBuffer::compute_once(vault_state, reserves_iter)?;
-    let vault_aum = vault_state.compute_aum(&holdings.invested.total)?;
-    Ok(vault_aum)
 }
 
 #[event_cpi]
@@ -172,6 +162,7 @@ pub struct RedeemInKind<'info> {
         seeds = [CTOKEN_VAULT_SEED, vault_state.key().as_ref(), reserve.key().as_ref()],
         bump,
         token::mint = ctoken_mint,
+        token::authority = base_vault_authority,
         token::token_program = reserve_collateral_token_program,
     )]
     pub ctoken_vault: Box<InterfaceAccount<'info, TokenAccount>>,
@@ -184,7 +175,8 @@ pub struct RedeemInKind<'info> {
     pub user_ctoken_ta: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut,
-        address = reserve.load()?.collateral.mint_pubkey
+        address = reserve.load()?.collateral.mint_pubkey,
+        mint::token_program = reserve_collateral_token_program,
     )]
     pub ctoken_mint: Box<InterfaceAccount<'info, Mint>>,
 
@@ -195,7 +187,9 @@ pub struct RedeemInKind<'info> {
     )]
     pub user_shares_ta: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(mut)]
+    #[account(mut,
+        mint::token_program = shares_token_program,
+    )]
     pub shares_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub reserve_collateral_token_program: Program<'info, Token>,

@@ -152,7 +152,9 @@ pub struct WithdrawPendingFees<'info> {
     pub vault_state: AccountLoader<'info, VaultState>,
 
     /// CHECK: check in logic if there is allocation for this reserve
-    #[account(mut)]
+    #[account(mut,
+        constraint = reserve.load()?.liquidity.token_program == token_program.key(),
+    )]
     pub reserve: AccountLoader<'info, Reserve>,
 
     #[account(mut,
@@ -164,7 +166,9 @@ pub struct WithdrawPendingFees<'info> {
     #[account(mut,
         seeds = [CTOKEN_VAULT_SEED, vault_state.key().as_ref(), reserve.key().as_ref()],
         bump,
+        token::authority = base_vault_authority,
         token::token_program = reserve_collateral_token_program,
+        constraint = ctoken_vault.mint == reserve.load()?.collateral.mint_pubkey,
     )]
     pub ctoken_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 

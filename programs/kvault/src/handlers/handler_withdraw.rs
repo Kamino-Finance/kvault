@@ -82,7 +82,9 @@ pub struct WithdrawFromInvested<'info> {
     pub vault_state: AccountLoader<'info, VaultState>,
 
     /// CHECK: check in logic if there is allocation for this reserve
-    #[account(mut)]
+    #[account(mut,
+        constraint = reserve.load()?.liquidity.token_program == vault_state.load()?.token_program,
+    )]
     pub reserve: AccountLoader<'info, Reserve>,
 
     // Deterministic, PDA
@@ -90,6 +92,8 @@ pub struct WithdrawFromInvested<'info> {
         seeds = [CTOKEN_VAULT_SEED, vault_state.key().as_ref(), reserve.key().as_ref()],
         bump,
         token::token_program = reserve_collateral_token_program,
+        constraint = ctoken_vault.owner == vault_state.load()?.base_vault_authority,
+        constraint = ctoken_vault.mint == reserve.load()?.collateral.mint_pubkey,
     )]
     pub ctoken_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 

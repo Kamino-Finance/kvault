@@ -1,4 +1,7 @@
-use kamino_lending::{fraction::Fraction, utils::U256};
+use kamino_lending::{
+    fraction::{Fraction, FractionExtra},
+    utils::U256,
+};
 
 #[inline]
 pub fn full_mul_fraction_ratio_ceil(
@@ -18,4 +21,13 @@ pub fn full_mul_fraction_ratio_ceil(
         .try_into()
         .expect("Result doesn't fit in a Fraction.");
     Fraction::from_bits(sf_res)
+}
+
+pub fn to_floor_and_rounding_error(fraction: Fraction) -> (u64, Fraction) {
+    (fraction.to_floor(), fraction.frac())
+}
+
+pub fn to_ceil_and_rounding_error(fraction: Fraction) -> (u64, Fraction) {
+    let ceil = fraction.to_ceil();
+    (ceil, Fraction::from_num(ceil) - fraction)
 }

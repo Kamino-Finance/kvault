@@ -1,4 +1,5 @@
 pub mod effects;
+pub mod klend_computations;
 pub mod klend_operations;
 pub mod reserve_whitelist_operations;
 pub mod vault_checks;

@@ -40,6 +40,41 @@ pub struct InvestEffects {
 }
 
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReserveInteractionEffects {
+    Noop,
+    DepositIntoReserve(DepositIntoReserveEffects),
+    WithdrawFromReserve(WithdrawFromReserveEffects, WithdrawUsingQueueEffects),
+}
+
+impl ReserveInteractionEffects {
+
+    pub fn affected_liquidity(&self) -> u64 {
+        match self {
+            ReserveInteractionEffects::Noop => 0,
+            ReserveInteractionEffects::DepositIntoReserve(deposit) => deposit.liquidity_to_deposit,
+            ReserveInteractionEffects::WithdrawFromReserve(immediate, queued) => {
+                immediate.expected_withdrawn_liquidity
+                    + queued.min_expected_liquidity_from_withdraw_queue
+            }
+        }
+    }
+
+
+    pub fn affected_collateral(&self) -> u64 {
+        match self {
+            ReserveInteractionEffects::Noop => 0,
+            ReserveInteractionEffects::DepositIntoReserve(deposit) => {
+                deposit.expected_minted_ctokens
+            }
+            ReserveInteractionEffects::WithdrawFromReserve(immediate, queued) => {
+                immediate.ctokens_to_redeem + queued.ctokens_to_enqueue_to_withdraw
+            }
+        }
+    }
+}
+
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct DepositIntoReserveEffects {
 
@@ -86,6 +121,18 @@ impl WithdrawFromReserveEffects {
         }
         panic!("Invalid withdraw from reserve effects: ctokens_to_redeem: {}, expected_withdrawn_liquidity: {}", positive_ctokens_to_redeem, positive_expected_withdrawn_liquidity);
     }
+}
+
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct WithdrawUsingQueueEffects {
+
+    pub ctokens_to_enqueue_to_withdraw: u64,
+
+
+
+
+    pub min_expected_liquidity_from_withdraw_queue: u64,
 }
 
 

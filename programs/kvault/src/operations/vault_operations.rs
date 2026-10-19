@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::Mul;
+use std::{cmp::min, ops::Mul};
 
 use anchor_lang::{err, prelude::*, require, solana_program::clock::Slot, Result};
 use common::{update_prev_aum, Holdings, HoldingsBuffer, Invested};
@@ -1439,6 +1439,47 @@ pub mod common {
         vault.compute_aum(&invested_total)
     }
 
+    pub fn holdings_totals<'info, T: AnyAccountLoader<'info, Reserve>>(
+        vault: &VaultState,
+        reserves_iter: impl Iterator<Item = T>,
+    ) -> Result<SyncedHoldingsTotals> {
+        let invested_total = amounts_invested_total(vault, reserves_iter)?;
+        let total_sum = Fraction::from(available_to_invest(vault)) + invested_total;
+
+        Ok(SyncedHoldingsTotals {
+            aum: vault.compute_aum(&invested_total)?,
+            total_sum,
+        })
+    }
+
+
+
+
+
+
+
+    pub fn holdings_totals_with_refreshed_reserve(
+        vault: &VaultState,
+        invested_total_before_refresh: Fraction,
+        reserve_liquidity_before_refresh: Fraction,
+        reserve_address: &Pubkey,
+        refreshed_reserve: &Reserve,
+    ) -> Result<SyncedHoldingsTotals> {
+        let refreshed_reserve_liquidity = compute_invested_reserve(
+            vault.allocation_for_reserve(reserve_address)?,
+            refreshed_reserve,
+        )?
+        .liquidity_amount;
+        let invested_total = invested_total_before_refresh - reserve_liquidity_before_refresh
+            + refreshed_reserve_liquidity;
+        let total_sum = Fraction::from(available_to_invest(vault)) + invested_total;
+
+        Ok(SyncedHoldingsTotals {
+            aum: vault.compute_aum(&invested_total)?,
+            total_sum,
+        })
+    }
+
     pub fn available_to_invest(vault: &VaultState) -> u64 {
         vault.token_available
     }
@@ -1449,6 +1490,29 @@ pub mod common {
 
     pub fn withdraw_from_vault(vault: &mut VaultState, amount: u64) {
         vault.token_available -= amount;
+    }
+
+
+
+
+
+
+
+
+
+
+
+    #[must_use = "the returned amount must be transferred from the payer to back `token_available`"]
+    pub fn cover_rounding_losses(vault: &mut VaultState, rounding_loss_liquidity: u64) -> u64 {
+       
+        deposit_into_vault(vault, rounding_loss_liquidity);
+
+       
+        let covered_liquidity = min(vault.available_crank_funds, rounding_loss_liquidity);
+        vault.available_crank_funds -= covered_liquidity;
+
+       
+        rounding_loss_liquidity - covered_liquidity
     }
 
     pub fn compute_user_total_received_on_withdraw_fraction(

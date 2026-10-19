@@ -1,5 +1,5 @@
-use anchor_lang::prelude::{AccountInfo, CpiContext, Result};
-use anchor_spl::token_interface::{self};
+use anchor_lang::prelude::{AccountInfo, CpiContext, Result, ToAccountInfo};
+use anchor_spl::token_interface;
 
 use super::consts::BASE_VAULT_AUTHORITY_SEED;
 use crate::gen_signer_seeds;
@@ -134,5 +134,32 @@ pub mod tokens {
             amount,
             decimals,
         )
+    }
+}
+
+pub mod extra {
+    use anchor_lang::{AccountDeserialize, CheckOwner};
+    use anchor_spl::token_interface::TokenAccount;
+
+    use super::*;
+
+
+    pub trait AccountInfoExtra {
+
+
+
+        fn token_amount(&self) -> Result<u64>;
+    }
+
+    impl<'info, T: ToAccountInfo<'info>> AccountInfoExtra for T {
+        fn token_amount(&self) -> Result<u64> {
+            let account_info = self.to_account_info();
+            if account_info.data_is_empty() {
+                return Ok(0);
+            }
+            TokenAccount::check_owner(account_info.owner)?;
+            let mut data: &[u8] = &account_info.try_borrow_data()?;
+            Ok(TokenAccount::try_deserialize(&mut data)?.amount)
+        }
     }
 }

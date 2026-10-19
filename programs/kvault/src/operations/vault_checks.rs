@@ -21,6 +21,18 @@ pub struct VaultBalances {
     pub vault_ctoken_balance: u64,
 }
 
+pub struct InvestPostCheckAmounts {
+    pub holdings_total: Fraction,
+    pub aum: Fraction,
+    pub reserve_supply_liquidity_balance: u64,
+    pub vault_token_balance: u64,
+    pub vault_ctoken_balance: u64,
+    pub owner_queued_collateral_vault_balance: u64,
+    pub withdraw_ticket_rent_budget: u64,
+    pub payer_lamports: u64,
+    pub base_vault_authority_lamports: u64,
+}
+
 pub struct RedeemInKindPostCheckAmounts {
     pub user_share_balance: u64,
     pub vault_ctoken_balance: u64,
